@@ -3,6 +3,7 @@ Main entry point for the LLM Agent Simulation.
 """
 
 import asyncio
+import logging
 import typer
 from typing import Optional
 from pathlib import Path
@@ -43,6 +44,7 @@ def run(
     days: int = typer.Option(10, "--days", "-d", help="Number of days to simulate"),
     config_file: Optional[Path] = typer.Option(None, "--config", "-c", help="Configuration file"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug mode"),
+    trace: bool = typer.Option(False, "--trace", help="Enable detailed per-tick step/action logs"),
     no_graphiti: bool = typer.Option(False, "--no-graphiti", help="Use basic memory instead of Graphiti")
 ):
     """
@@ -71,7 +73,15 @@ def run(
     config["max_agents"] = agents
     config["max_days"] = days
     config["debug"] = debug
+    config["trace"] = trace
     config["use_graphiti"] = not no_graphiti
+    
+    # Configure logging (ensure our engine/Graphiti logs are visible)
+    log_level = logging.DEBUG if (debug or trace) else logging.INFO
+    logging.basicConfig(
+        level=log_level,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
     
     # Run simulation
     console.print(f"\n[green]Starting simulation with {agents} agents for {days} days...[/green]")

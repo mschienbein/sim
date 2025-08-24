@@ -3,7 +3,7 @@ Core configuration and settings management for the simulation.
 """
 
 from typing import Optional
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 from pathlib import Path
 import os
@@ -14,70 +14,69 @@ load_dotenv()
 
 class LLMConfig(BaseSettings):
     """LLM Provider configuration"""
-    provider: str = Field(default="openai", env="LLM_PROVIDER")
+    # Pydantic v2 Settings config
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    provider: str = Field(default="openai", validation_alias="LLM_PROVIDER")
     
     # OpenAI settings
-    openai_api_key: Optional[str] = Field(default=None, env="OPENAI_API_KEY")
-    openai_model_id: str = Field(default="gpt-5", env="OPENAI_MODEL_ID")
-    openai_sage_model_id: str = Field(default="gpt-5", env="OPENAI_SAGE_MODEL_ID")
-    openai_embedding_model: str = Field(default="text-embedding-3-small", env="OPENAI_EMBEDDING_MODEL")
+    openai_api_key: Optional[str] = Field(default=None, validation_alias="OPENAI_API_KEY")
+    openai_model_id: str = Field(default="gpt-5", validation_alias="OPENAI_MODEL_ID")
+    openai_sage_model_id: str = Field(default="gpt-5", validation_alias="OPENAI_SAGE_MODEL_ID")
+    openai_embedding_model: str = Field(default="text-embedding-3-small", validation_alias="OPENAI_EMBEDDING_MODEL")
+    # Retry/timeout
+    openai_max_retries: int = Field(default=5, validation_alias="OPENAI_MAX_RETRIES")
+    openai_timeout_seconds: float = Field(default=60.0, validation_alias="OPENAI_TIMEOUT_SECONDS")
     
     # AWS/Bedrock settings (backup)
-    aws_region: str = Field(default="us-east-1", env="AWS_REGION")
-    aws_access_key_id: Optional[str] = Field(default=None, env="AWS_ACCESS_KEY_ID")
-    aws_secret_access_key: Optional[str] = Field(default=None, env="AWS_SECRET_ACCESS_KEY")
-    bedrock_region: str = Field(default="us-east-1", env="BEDROCK_REGION")
+    aws_region: str = Field(default="us-east-1", validation_alias="AWS_REGION")
+    aws_access_key_id: Optional[str] = Field(default=None, validation_alias="AWS_ACCESS_KEY_ID")
+    aws_secret_access_key: Optional[str] = Field(default=None, validation_alias="AWS_SECRET_ACCESS_KEY")
+    bedrock_region: str = Field(default="us-east-1", validation_alias="BEDROCK_REGION")
     bedrock_model_id: str = Field(
         default="anthropic.claude-3-haiku-20240307",
-        env="BEDROCK_MODEL_ID"
+        validation_alias="BEDROCK_MODEL_ID"
     )
     bedrock_sage_model_id: str = Field(
         default="anthropic.claude-3-sonnet-20240229", 
-        env="BEDROCK_SAGE_MODEL_ID"
+        validation_alias="BEDROCK_SAGE_MODEL_ID"
     )
-    
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
 
 class Neo4jConfig(BaseSettings):
     """Neo4j database configuration"""
-    uri: str = Field(default="bolt://localhost:7687", env="NEO4J_URI")
-    username: str = Field(default="neo4j", env="NEO4J_USERNAME")
-    password: str = Field(default="password", env="NEO4J_PASSWORD")
-    database: str = Field(default="simulation", env="NEO4J_DATABASE")
-    
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
+    # Use Pydantic v2-style settings config with an env prefix
+    # so NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD, NEO4J_DATABASE are respected
+    model_config = SettingsConfigDict(env_prefix="NEO4J_", env_file=".env", extra="ignore")
+
+    uri: str = Field(default="bolt://localhost:7687")
+    username: str = Field(default="neo4j")
+    password: str = Field(default="password")
+    database: str = Field(default="simulation")
 
 class SimulationConfig(BaseSettings):
     """Core simulation parameters"""
-    name: str = Field(default="smallville_v1", env="SIMULATION_NAME")
-    max_agents: int = Field(default=5, env="MAX_AGENTS")
-    max_days: int = Field(default=10, env="MAX_DAYS")
-    ticks_per_day: int = Field(default=24, env="TICKS_PER_DAY")
-    tick_duration_ms: int = Field(default=5000, env="TICK_DURATION_MS")
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    name: str = Field(default="smallville_v1", validation_alias="SIMULATION_NAME")
+    max_agents: int = Field(default=5, validation_alias="MAX_AGENTS")
+    max_days: int = Field(default=10, validation_alias="MAX_DAYS")
+    ticks_per_day: int = Field(default=24, validation_alias="TICKS_PER_DAY")
+    tick_duration_ms: int = Field(default=5000, validation_alias="TICK_DURATION_MS")
     
     # World configuration
     world_size: tuple = (10, 10)
-    
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
 
 class RateLimitConfig(BaseSettings):
     """Token budget and rate limiting"""
-    daily_token_budget: int = Field(default=1000000, env="DAILY_TOKEN_BUDGET")
-    per_agent_token_limit: int = Field(default=200000, env="PER_AGENT_TOKEN_LIMIT")
-    max_conversation_turns: int = Field(default=5, env="MAX_CONVERSATION_TURNS")
-    
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    daily_token_budget: int = Field(default=1000000, validation_alias="DAILY_TOKEN_BUDGET")
+    per_agent_token_limit: int = Field(default=200000, validation_alias="PER_AGENT_TOKEN_LIMIT")
+    max_conversation_turns: int = Field(default=5, validation_alias="MAX_CONVERSATION_TURNS")
 
 class PersonalityConfig(BaseSettings):
     """Agent personality trait ranges"""
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
     trait_ranges: dict = Field(default={
         "openness": (0.0, 1.0),
         "conscientiousness": (0.0, 1.0),
@@ -106,12 +105,10 @@ class PersonalityConfig(BaseSettings):
         "stress": 0.012
     })
     
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
 
 class WorldConfig(BaseSettings):
     """World and location configuration"""
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
     
     locations: dict = Field(default={
         "forest": {
@@ -238,9 +235,6 @@ class WorldConfig(BaseSettings):
         "night": {"energy": 0.7, "rest": 1.5}
     })
     
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
 
 class Settings:
     """Main settings aggregator"""

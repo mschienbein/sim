@@ -10,6 +10,7 @@ from strands.multiagent import Swarm
 
 from src.agents.base_agent import SimulationAgent
 from src.config.settings import settings
+from src.orchestration.retry import retry_async
 
 class ConversationManager:
     """
@@ -92,13 +93,17 @@ class ConversationManager:
         
         # Use A2A to send message
         if conversation.client_provider:
-            # Call the other agent as a tool
-            response = await conversation.client_provider.call_tool(
-                tool_name=f"{listener_id}.speak",
-                arguments={
-                    "message": message,
-                    "context": conversation.context
-                }
+            # Call the other agent as a tool, with retry/backoff for transient 429s
+            response = await retry_async(
+                lambda: conversation.client_provider.call_tool(
+                    tool_name=f"{listener_id}.speak",
+                    arguments={
+                        "message": message,
+                        "context": conversation.context,
+                    },
+                ),
+                attempts=max(1, int(settings.llm.openai_max_retries or 1)),
+                purpose=f"a2a:{speaker_id}->{listener_id}",
             )
         else:
             # Fallback to direct response

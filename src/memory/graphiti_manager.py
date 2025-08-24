@@ -12,6 +12,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 from graphiti_core import Graphiti
+from graphiti_core.driver.neo4j_driver import Neo4jDriver
 from graphiti_core.nodes import EntityNode, EpisodicNode
 from graphiti_core.edges import EntityEdge, EpisodicEdge
 # Search functionality updated in newer graphiti versions
@@ -32,13 +33,20 @@ class GraphitiMemoryManager:
         
     async def initialize(self):
         """Set up Graphiti connection and schema"""
-        # Use our simple driver that always uses 'simulation' database
-        from src.memory.simple_neo4j_driver import SimulationNeo4jDriver
-        
-        graph_driver = SimulationNeo4jDriver(
+        # Use Graphiti's official Neo4jDriver pinned to the configured database (simulation)
+        logger.info(
+            "Initializing Graphiti Neo4j driver",
+            extra={
+                "neo4j_uri": settings.neo4j.uri,
+                "neo4j_database": settings.neo4j.database,
+                "user": settings.neo4j.username,
+            },
+        )
+        graph_driver = Neo4jDriver(
             uri=settings.neo4j.uri,
             user=settings.neo4j.username,
-            password=settings.neo4j.password
+            password=settings.neo4j.password,
+            database=settings.neo4j.database,
         )
         
         # Initialize Graphiti with our driver
@@ -52,13 +60,20 @@ class GraphitiMemoryManager:
         # to the 'simulation' database without relying on Graphiti internals
         self._graph_driver = graph_driver
         
-        # Skip indices for now - they're causing auth issues with parallel connections
-        # await self.graphiti.build_indices_and_constraints()
+        # Build indices & constraints once (idempotent). If they've already been created,
+        # or Neo4j is unavailable, log and continue so the app doesn't hang.
+        try:
+            await self.graphiti.build_indices_and_constraints()
+            logger.info("Graphiti indices and constraints ensured")
+        except Exception as e:
+            logger.warning(f"Skipping build_indices_and_constraints: {e}")
         
         self.initialized = True
+        logger.info("Graphiti memory initialized successfully")
         
         # Define our simulation-specific node and edge types
         await self._register_simulation_schema()
+        logger.debug("Simulation schema registered for Graphiti")
     
     async def _register_simulation_schema(self):
         """Register custom node and edge types for the simulation"""
@@ -271,28 +286,84 @@ class GraphitiMemoryManager:
             timestamp = datetime.now()
         
         # Build episode for Graphiti
+        try:
+            content_str = json.dumps(dialogue)
+        except Exception:
+            logger.exception(
+                "Failed to JSON-serialize dialogue for conversation",
+                extra={
+                    "participants": [agent_a_id, agent_b_id],
+                    "turn_count": len(dialogue),
+                    "dialogue_preview": self._preview(dialogue),
+                },
+            )
+            content_str = str(dialogue)
         episode = {
             "name": f"conversation_{agent_a_id}_{agent_b_id}_{timestamp.isoformat()}",
-            "content": json.dumps(dialogue),
+            "content": content_str,
             "timestamp": timestamp,
             "source": "conversation",
             "metadata": {
                 "participants": [agent_a_id, agent_b_id],
                 "location": location,
-                "turn_count": len(dialogue)
-            }
+                "turn_count": len(dialogue),
+            },
         }
         
         # Ingest into Graphiti - it will extract entities and relationships
         # Include metadata in episode body
         episode_body = f"{episode['content']}\n[Context: {agent_a_id} speaking with {agent_b_id} at {location}]"
         
-        await self.graphiti.add_episode(
-            name=episode["name"],
-            episode_body=episode_body,
-            source_description=f"Conversation between {agent_a_id} and {agent_b_id}",
-            reference_time=timestamp
-        )
+        try:
+            logger.debug(
+                "Graphiti add_episode: conversation",
+                extra={
+                    "episode_name": episode["name"],
+                    "participants": [agent_a_id, agent_b_id],
+                    "turn_count": len(dialogue),
+                    "body_preview": self._preview(episode_body),
+                },
+            )
+            await self.graphiti.add_episode(
+                name=episode["name"],
+                episode_body=episode_body,
+                source_description=f"Conversation between {agent_a_id} and {agent_b_id}",
+                reference_time=timestamp,
+            )
+        except Exception as e:
+            invalid_json = None
+            # Attempt to extract invalid JSON snippet from error
+            try:
+                if hasattr(e, "errors"):
+                    err_list = e.errors()  # type: ignore[attr-defined]
+                    # Try to find raw input field if present (Pydantic v2 includes 'input')
+                    if isinstance(err_list, list) and err_list:
+                        for err in err_list:
+                            raw = None
+                            if isinstance(err, dict):
+                                raw = err.get("input") or err.get("ctx", {}).get("input")
+                            if raw:
+                                invalid_json = self._preview(raw, max_len=1200)
+                                break
+                if not invalid_json:
+                    invalid_json = self._extract_invalid_json_from_message(str(e))
+            except Exception:
+                pass
+
+            logger.exception(
+                "Graphiti add_episode failed for conversation",
+                extra={
+                    "episode_name": episode["name"],
+                    "participants": [agent_a_id, agent_b_id],
+                    "turn_count": len(dialogue),
+                    "body_preview": self._preview(episode_body),
+                    "body_len": len(episode_body),
+                    "error_type": type(e).__name__,
+                    "error_message": str(e)[:800],
+                    "invalid_json_preview": invalid_json,
+                },
+            )
+            raise
         
         # Update SPOKE_WITH relationship
         await self.create_relationship_edge(
@@ -334,12 +405,52 @@ class GraphitiMemoryManager:
         # Include metadata in episode body since Graphiti doesn't accept metadata param
         episode_body = f"{observation}\n[Location: {location}, Importance: {importance}]"
         
-        await self.graphiti.add_episode(
-            name=episode["name"],
-            episode_body=episode_body,
-            source_description=f"{agent_id} observed",
-            reference_time=timestamp
-        )
+        try:
+            logger.debug(
+                "Graphiti add_episode: observation",
+                extra={
+                    "episode_name": episode["name"],
+                    "agent": agent_id,
+                    "body_preview": self._preview(episode_body),
+                },
+            )
+            await self.graphiti.add_episode(
+                name=episode["name"],
+                episode_body=episode_body,
+                source_description=f"{agent_id} observed",
+                reference_time=timestamp,
+            )
+        except Exception as e:
+            invalid_json = None
+            try:
+                if hasattr(e, "errors"):
+                    err_list = e.errors()  # type: ignore[attr-defined]
+                    if isinstance(err_list, list) and err_list:
+                        for err in err_list:
+                            raw = None
+                            if isinstance(err, dict):
+                                raw = err.get("input") or err.get("ctx", {}).get("input")
+                            if raw:
+                                invalid_json = self._preview(raw, max_len=1200)
+                                break
+                if not invalid_json:
+                    invalid_json = self._extract_invalid_json_from_message(str(e))
+            except Exception:
+                pass
+
+            logger.exception(
+                "Graphiti add_episode failed for observation",
+                extra={
+                    "episode_name": episode["name"],
+                    "agent": agent_id,
+                    "body_preview": self._preview(episode_body),
+                    "body_len": len(episode_body),
+                    "error_type": type(e).__name__,
+                    "error_message": str(e)[:800],
+                    "invalid_json_preview": invalid_json,
+                },
+            )
+            raise
     
     async def ingest_trade(
         self,
@@ -366,14 +477,65 @@ class GraphitiMemoryManager:
         }
         
         # Create trade episode with metadata in body
-        trade_body = json.dumps(trade_record, indent=2)
+        try:
+            trade_body = json.dumps(trade_record, indent=2)
+        except Exception:
+            logger.exception(
+                "Failed to JSON-serialize trade record",
+                extra={
+                    "from": from_agent,
+                    "to": to_agent,
+                    "record_preview": self._preview(trade_record),
+                },
+            )
+            trade_body = str(trade_record)
         
-        await self.graphiti.add_episode(
-            name=f"trade_{from_agent}_{to_agent}_{timestamp.isoformat()}",
-            episode_body=trade_body,
-            source_description=f"Trade between {from_agent} and {to_agent}",
-            reference_time=timestamp
-        )
+        try:
+            logger.debug(
+                "Graphiti add_episode: trade",
+                extra={
+                    "from": from_agent,
+                    "to": to_agent,
+                    "body_preview": self._preview(trade_body),
+                },
+            )
+            await self.graphiti.add_episode(
+                name=f"trade_{from_agent}_{to_agent}_{timestamp.isoformat()}",
+                episode_body=trade_body,
+                source_description=f"Trade between {from_agent} and {to_agent}",
+                reference_time=timestamp,
+            )
+        except Exception as e:
+            invalid_json = None
+            try:
+                if hasattr(e, "errors"):
+                    err_list = e.errors()  # type: ignore[attr-defined]
+                    if isinstance(err_list, list) and err_list:
+                        for err in err_list:
+                            raw = None
+                            if isinstance(err, dict):
+                                raw = err.get("input") or err.get("ctx", {}).get("input")
+                            if raw:
+                                invalid_json = self._preview(raw, max_len=1200)
+                                break
+                if not invalid_json:
+                    invalid_json = self._extract_invalid_json_from_message(str(e))
+            except Exception:
+                pass
+
+            logger.exception(
+                "Graphiti add_episode failed for trade",
+                extra={
+                    "from": from_agent,
+                    "to": to_agent,
+                    "body_preview": self._preview(trade_body),
+                    "body_len": len(trade_body) if isinstance(trade_body, str) else None,
+                    "error_type": type(e).__name__,
+                    "error_message": str(e)[:800],
+                    "invalid_json_preview": invalid_json,
+                },
+            )
+            raise
         
         # Update TRADED edge
         await self.create_relationship_edge(
@@ -408,12 +570,52 @@ class GraphitiMemoryManager:
         # Include metadata in episode body
         knowledge_body = f"{fact}\n[Type: {knowledge_type}, Source: {source}, Confidence: {confidence}, Verified: {verified}]"
         
-        await self.graphiti.add_episode(
-            name=f"{knowledge_type.lower()}_{agent_id}_{timestamp.isoformat()}",
-            episode_body=knowledge_body,
-            source_description=f"Knowledge from {source}",
-            reference_time=timestamp
-        )
+        try:
+            logger.debug(
+                "Graphiti add_episode: knowledge",
+                extra={
+                    "agent": agent_id,
+                    "type": knowledge_type,
+                    "body_preview": self._preview(knowledge_body),
+                },
+            )
+            await self.graphiti.add_episode(
+                name=f"{knowledge_type.lower()}_{agent_id}_{timestamp.isoformat()}",
+                episode_body=knowledge_body,
+                source_description=f"Knowledge from {source}",
+                reference_time=timestamp,
+            )
+        except Exception as e:
+            invalid_json = None
+            try:
+                if hasattr(e, "errors"):
+                    err_list = e.errors()  # type: ignore[attr-defined]
+                    if isinstance(err_list, list) and err_list:
+                        for err in err_list:
+                            raw = None
+                            if isinstance(err, dict):
+                                raw = err.get("input") or err.get("ctx", {}).get("input")
+                            if raw:
+                                invalid_json = self._preview(raw, max_len=1200)
+                                break
+                if not invalid_json:
+                    invalid_json = self._extract_invalid_json_from_message(str(e))
+            except Exception:
+                pass
+
+            logger.exception(
+                "Graphiti add_episode failed for knowledge",
+                extra={
+                    "agent": agent_id,
+                    "type": knowledge_type,
+                    "body_preview": self._preview(knowledge_body),
+                    "body_len": len(knowledge_body),
+                    "error_type": type(e).__name__,
+                    "error_message": str(e)[:800],
+                    "invalid_json_preview": invalid_json,
+                },
+            )
+            raise
         
         # Graphiti will automatically extract entities from the episode
         # Track the knowledge relationship separately if needed
@@ -515,10 +717,21 @@ class GraphitiMemoryManager:
             filters["type"] = {"$in": memory_types}
         
         # Execute search via Graphiti with new API
-        results = await self.graphiti.search(
-            query=query,
-            num_results=limit
-        )
+        try:
+            results = await self.graphiti.search(
+                query=query,
+                num_results=limit
+            )
+        except Exception:
+            logger.exception(
+                "Graphiti search failed",
+                extra={
+                    "query": query,
+                    "filters": filters,
+                    "limit": limit,
+                },
+            )
+            return []
         
         # Format results
         formatted_results = []
@@ -534,6 +747,60 @@ class GraphitiMemoryManager:
             })
         
         return formatted_results
+
+    def _preview(self, data: Any, max_len: int = 300) -> str:
+        """Return a safe, truncated preview string for logging."""
+        try:
+            if isinstance(data, str):
+                s = data
+            else:
+                s = json.dumps(data, default=str)
+        except Exception:
+            s = str(data)
+        if len(s) > max_len:
+            return s[:max_len] + "...(truncated)"
+        return s
+
+    def _extract_invalid_json_from_message(self, message: str, max_len: int = 1200) -> Optional[str]:
+        """Best-effort extraction of invalid JSON snippet from an exception message.
+        Looks for patterns like input_value='...'
+        """
+        try:
+            anchor = "input_value="
+            idx = message.find(anchor)
+            if idx == -1:
+                return None
+            i = idx + len(anchor)
+            if i >= len(message):
+                return None
+            quote = message[i]
+            if quote not in ("'", '"'):
+                # Sometimes no quote, fall back to remaining string
+                snippet = message[i:i + max_len]
+                return snippet
+            i += 1
+            # Prefer to stop at the pattern: <quote>, input_type
+            end_pat = f"{quote}, input_type"
+            j = message.find(end_pat, i)
+            if j == -1:
+                # Fallback: last matching quote
+                j = message.rfind(quote)
+                if j == -1 or j <= i:
+                    return None
+            snippet = message[i:j]
+            if len(snippet) > max_len:
+                snippet = snippet[:max_len] + "...(truncated)"
+            return snippet
+        except Exception:
+            return None
+
+    async def close(self):
+        """Close underlying resources if any."""
+        try:
+            if hasattr(self, "_graph_driver") and self._graph_driver:
+                await self._graph_driver.close()  # type: ignore[attr-defined]
+        except Exception:
+            logger.debug("Error while closing Graphiti Neo4j driver", exc_info=True)
     
     async def get_related_entities(
         self,
@@ -658,12 +925,29 @@ class GraphitiMemoryManager:
         # Include metadata in reflection body
         reflection_body = f"{reflection}\n[Themes: {', '.join(themes)}, Memory count: {len(recent_memories)}]"
         
-        await self.graphiti.add_episode(
-            name=f"reflection_{agent_id}_{datetime.now().isoformat()}",
-            episode_body=reflection_body,
-            source_description=f"{agent_id}'s daily reflection",
-            reference_time=datetime.now()
-        )
+        try:
+            logger.debug(
+                "Graphiti add_episode: reflection",
+                extra={
+                    "agent": agent_id,
+                    "body_preview": self._preview(reflection_body),
+                },
+            )
+            await self.graphiti.add_episode(
+                name=f"reflection_{agent_id}_{datetime.now().isoformat()}",
+                episode_body=reflection_body,
+                source_description=f"{agent_id}'s daily reflection",
+                reference_time=datetime.now(),
+            )
+        except Exception:
+            logger.exception(
+                "Graphiti add_episode failed for reflection",
+                extra={
+                    "agent": agent_id,
+                    "body_preview": self._preview(reflection_body),
+                },
+            )
+            raise
         
         # Prune low-importance memories (Graphiti handles this efficiently)
         # The framework automatically manages memory importance decay
@@ -682,7 +966,7 @@ class GraphitiMemoryManager:
         Create or update a specific relationship edge between agents.
         Uses Neo4j directly for custom edge types.
         """
-        # Reuse the SimulationNeo4jDriver session, already bound to 'simulation'
+        # Reuse the Graphiti Neo4jDriver session, already bound to the configured database
         async with self._graph_driver.session() as session:
             
             # Ensure both agents exist as nodes
@@ -941,11 +1225,8 @@ class GraphitiMemoryManager:
         delta: float
     ):
         """Update the strength/intensity of an existing relationship."""
-        # First get the current relationship
-        async with AsyncGraphDatabase.driver(
-            settings.neo4j.uri,
-            auth=(settings.neo4j.username, settings.neo4j.password)
-        ).session() as session:
+        # Use the pinned Graphiti Neo4jDriver session (bound to settings.neo4j.database)
+        async with self._graph_driver.session() as session:
             
             # Get current value
             query = f"""

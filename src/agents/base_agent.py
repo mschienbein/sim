@@ -2,9 +2,10 @@
 Base agent implementation using Strands SDK with personality and memory.
 """
 
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any, Tuple, Callable, Awaitable, TypeVar
 from dataclasses import dataclass, field
 from datetime import datetime
+import logging
 
 from strands import Agent, tool
 from strands.models.openai import OpenAIModel
@@ -15,6 +16,9 @@ from src.agents.personality import (
 )
 from src.memory.manager import MemoryManager
 from src.config.settings import settings
+from src.orchestration.retry import retry_async
+
+T = TypeVar("T")
 
 @dataclass
 class AgentStats:
@@ -140,6 +144,8 @@ class SimulationAgent(Agent):
             model = OpenAIModel(
                 client_args={
                     "api_key": settings.llm.openai_api_key,
+                    "max_retries": settings.llm.openai_max_retries,
+                    "timeout": settings.llm.openai_timeout_seconds,
                 },
                 model_id=settings.llm.openai_model_id,
                 params={
@@ -178,6 +184,17 @@ class SimulationAgent(Agent):
         self.memory_manager = memory_manager
         self.short_term_memory = []  # Recent events
         self.conversation_history = []
+        # Log client configuration for observability (avoid sensitive fields)
+        logging.getLogger(__name__).debug(
+            "OpenAI client configured for SimulationAgent",
+            extra={
+                "agent_id": agent_id,
+                "role": role,
+                "model_id": settings.llm.openai_model_id,
+                "openai_max_retries": settings.llm.openai_max_retries,
+                "openai_timeout_seconds": settings.llm.openai_timeout_seconds,
+            },
+        )
         
         # Action management
         self.current_action = None
@@ -563,6 +580,31 @@ Always stay in character and respond as {name} would."""
             actions.append("trade")
         
         return actions
+
+    async def _with_llm_retry(self, purpose: str, fn: Callable[[], Awaitable[T]]) -> T:
+        """Wrap an async LLM call with centralized retry/backoff and logging.
+
+        Args:
+            purpose: Short description of the LLM operation for logs (e.g., "speak", "reflect").
+            fn: Zero-arg coroutine factory that performs the actual LLM call.
+
+        Returns:
+            Result of the LLM call if successful.
+
+        Raises:
+            Propagates the last exception if non-retriable or attempts are exhausted.
+        """
+        logger = logging.getLogger(__name__)
+        # Use configured max retries; ensure at least 1 attempt
+        attempts = int(settings.llm.openai_max_retries or 1)
+        attempts = max(1, attempts)
+
+        return await retry_async(
+            fn,
+            attempts=attempts,
+            logger=logger,
+            purpose=f"{self.agent_id}:{purpose}",
+        )
     
     def update_tick(self, tick: int, world_state: Dict[str, Any]):
         """Update agent state each tick"""

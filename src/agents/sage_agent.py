@@ -4,6 +4,7 @@ Sage agent with special web search capabilities.
 
 from typing import Dict, List, Any
 from datetime import datetime, date
+import logging
 
 from strands import tool
 from strands.models.openai import OpenAIModel
@@ -48,6 +49,8 @@ class SageAgent(SimulationAgent):
         sage_model = OpenAIModel(
             client_args={
                 "api_key": settings.llm.openai_api_key,
+                "max_retries": settings.llm.openai_max_retries,
+                "timeout": settings.llm.openai_timeout_seconds,
             },
             model_id=settings.llm.openai_sage_model_id,
             params={
@@ -83,6 +86,17 @@ class SageAgent(SimulationAgent):
             "history": 0.9,
             "mysticism": 0.7
         }
+        # Log client configuration for observability (avoid sensitive fields)
+        logging.getLogger(__name__).debug(
+            "OpenAI client configured for SageAgent",
+            extra={
+                "agent_id": agent_id,
+                "role": "sage",
+                "model_id": settings.llm.openai_sage_model_id,
+                "openai_max_retries": settings.llm.openai_max_retries,
+                "openai_timeout_seconds": settings.llm.openai_timeout_seconds,
+            },
+        )
         
         # Initial knowledge
         self.stats.known_facts = [
@@ -124,9 +138,12 @@ class SageAgent(SimulationAgent):
         
         # Perform search (simplified - would integrate with actual search API)
         try:
-            # In production, this would call Bedrock or another search service
-            # For now, simulate with predefined responses
-            search_result = await self._simulate_web_search(query)
+            # In production, this would call Bedrock or another search service.
+            # Route through centralized retry/backoff to gracefully handle rate limits.
+            search_result = await self._with_llm_retry(
+                "web_search",
+                lambda: self._simulate_web_search(query),
+            )
             
             # Track usage
             self.searches_today += 1

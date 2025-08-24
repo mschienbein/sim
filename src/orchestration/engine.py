@@ -3,6 +3,7 @@ Main simulation engine that orchestrates agent interactions and world state.
 """
 
 import asyncio
+import logging
 from typing import Dict, List, Optional, Any, Tuple
 import json
 import random
@@ -18,6 +19,8 @@ from src.world.grid import WorldGrid, LocationType
 from src.config.settings import settings
 from src.orchestration.rate_limiter import TokenBudgetManager
 from src.orchestration.conversation_manager import ConversationManager
+
+logger = logging.getLogger(__name__)
 
 class SimulationEngine:
     """
@@ -66,14 +69,30 @@ class SimulationEngine:
         
         self.conversation_logs = []
         self.event_log = []
+        
+        # Tracing / verbose step logging
+        self.trace_enabled = bool(self.config.get("trace", False))
     
     async def initialize(self):
         """Initialize all components and connections"""
         print("🌍 Initializing simulation world...")
         
         # Initialize memory manager with Graphiti
-        await self.memory_manager.initialize()
-        print("✓ Memory system (Graphiti + Neo4j) initialized")
+        try:
+            await self.memory_manager.initialize()
+            print("✓ Memory system (Graphiti + Neo4j) initialized")
+        except Exception as e:
+            logger.exception(
+                "Memory manager initialization failed",
+                extra={
+                    "use_graphiti": self.config.get("use_graphiti", True),
+                    "trace": self.trace_enabled,
+                    "config_debug": bool(self.config.get("debug", False)),
+                    "error_type": type(e).__name__,
+                    "error_message": str(e)[:800],
+                },
+            )
+            raise
         
         # Create agents
         await self._create_agents()
@@ -88,6 +107,8 @@ class SimulationEngine:
         print("✓ Agent memories initialized")
         
         print("🚀 Simulation ready to start!")
+        if self.trace_enabled:
+            self._trace("Initialization complete")
     
     async def _create_agents(self):
         """Create the initial set of agents"""
@@ -224,28 +245,42 @@ class SimulationEngine:
                         break
                 
                 self.current_tick = day * settings.simulation.ticks_per_day + tick
+                if self.trace_enabled:
+                    self._trace(f"Tick start (tick={self.current_tick})")
                 
                 # Get world state
                 world_state = self.world.get_world_state(self.current_tick)
                 
                 # Phase 1: Perception - all agents perceive environment
+                if self.trace_enabled:
+                    self._trace("Phase 1: Perception")
                 perceptions = await self._gather_perceptions(world_state)
                 
                 # Phase 2: Decision - agents decide what to do
+                if self.trace_enabled:
+                    self._trace("Phase 2: Decision")
                 decisions = await self._make_decisions(perceptions)
                 
                 # Phase 3: Action resolution
+                if self.trace_enabled:
+                    self._trace("Phase 3: Actions")
                 await self._resolve_actions(decisions)
                 
                 # Phase 4: Interactions - handle conversations/trades
+                if self.trace_enabled:
+                    self._trace("Phase 4: Interactions")
                 await self._handle_interactions()
                 
                 # Phase 5: State updates
+                if self.trace_enabled:
+                    self._trace("Phase 5: State updates")
                 self._update_world_state()
                 self._update_agent_states(tick)
                 
                 # Phase 6: Periodic tasks
                 if tick % 6 == 0:  # Every 6 ticks
+                    if self.trace_enabled:
+                        self._trace("Phase 6: Reflections")
                     await self._trigger_reflections()
                 
                 # Record metrics
@@ -306,6 +341,8 @@ class SimulationEngine:
             if not self.token_manager.can_call_llm(agent_id, estimated_tokens=500):
                 # Fallback to simple decision
                 decisions[agent_id] = self._make_simple_decision(agent, perception)
+                if self.trace_enabled:
+                    self._trace(self._format_decision_log(agent.name, decisions[agent_id], token_limited=True))
                 continue
             
             # Make LLM-based decision (would call agent.decide() in production)
@@ -315,6 +352,8 @@ class SimulationEngine:
             
             # Track token usage
             self.token_manager.track_usage(agent_id, 500)  # Estimated
+            if self.trace_enabled:
+                self._trace(self._format_decision_log(agent.name, decision))
         
         return decisions
     
@@ -411,6 +450,8 @@ class SimulationEngine:
                     "action": action,
                     "decision": decision
                 })
+                if self.trace_enabled:
+                    self._trace(self._format_action_log(agent.name, action, decision))
                 
             except Exception as e:
                 print(f"Error executing action for {agent_id}: {e}")
@@ -430,6 +471,10 @@ class SimulationEngine:
             # Probabilistic interactions
             for agent_a_id, agent_b_id in combinations(agent_ids, 2):
                 if random.random() < 0.3:  # 30% chance of interaction
+                    if self.trace_enabled:
+                        a = self.agents[agent_a_id].name
+                        b = self.agents[agent_b_id].name
+                        self._trace(f"Interaction triggered between {a} and {b} at {location}")
                     await self._run_conversation(agent_a_id, agent_b_id, location)
     
     async def _run_conversation(
@@ -494,6 +539,8 @@ class SimulationEngine:
             "location": location,
             "dialogue": dialogue
         })
+        if self.trace_enabled:
+            self._trace(f"Conversation: {agent_a.name} ↔ {agent_b.name} ({len(dialogue)} turns)")
     
     def _update_world_state(self):
         """Update world state each tick"""
@@ -530,6 +577,8 @@ class SimulationEngine:
         
         # Save checkpoint
         await self._save_checkpoint()
+        if self.trace_enabled:
+            self._trace("Checkpoint saved")
     
     async def _save_checkpoint(self):
         """Save simulation state"""
@@ -599,6 +648,37 @@ class SimulationEngine:
         self.running = False
         await self._save_checkpoint()
         await self.memory_manager.close()
+
+    # --- Internal helpers for trace logging ---
+    def _trace(self, message: str):
+        """Emit a trace line with day/tick context when tracing is enabled"""
+        prefix = f"[D{self.current_day + 1} T{self.current_tick}]"
+        print(f"🔍 {prefix} {message}")
+
+    def _format_decision_log(self, agent_name: str, decision: Dict[str, Any], token_limited: bool = False) -> str:
+        action = decision.get("action", "observe")
+        reason = decision.get("reason")
+        extra = []
+        if "direction" in decision:
+            extra.append(f"direction={decision['direction']}")
+        if "target" in decision:
+            extra.append(f"target={decision['target']}")
+        if "message" in decision:
+            extra.append("message=…")
+        extras = f" ({', '.join(extra)})" if extra else ""
+        budget_note = " [budget-limited]" if token_limited else ""
+        return f"Decision: {agent_name} → {action}{extras}{budget_note}{f' — {reason}' if reason else ''}"
+
+    def _format_action_log(self, agent_name: str, action: str, decision: Dict[str, Any]) -> str:
+        extra = []
+        if action == "move" and "direction" in decision:
+            extra.append(f"direction={decision['direction']}")
+        if action in {"speak", "trade"} and "target" in decision:
+            extra.append(f"target={decision['target']}")
+        if action == "speak" and "message" in decision:
+            extra.append("message=…")
+        extras = f" ({', '.join(extra)})" if extra else ""
+        return f"Action: {agent_name} → {action}{extras}"
     
     def pause(self):
         """Pause the simulation"""
