@@ -38,6 +38,7 @@ class LLMConfig(BaseSettings):
     
     class Config:
         env_file = ".env"
+        extra = "ignore"
 
 class Neo4jConfig(BaseSettings):
     """Neo4j database configuration"""
@@ -48,6 +49,7 @@ class Neo4jConfig(BaseSettings):
     
     class Config:
         env_file = ".env"
+        extra = "ignore"
 
 class SimulationConfig(BaseSettings):
     """Core simulation parameters"""
@@ -62,6 +64,7 @@ class SimulationConfig(BaseSettings):
     
     class Config:
         env_file = ".env"
+        extra = "ignore"
 
 class RateLimitConfig(BaseSettings):
     """Token budget and rate limiting"""
@@ -71,18 +74,19 @@ class RateLimitConfig(BaseSettings):
     
     class Config:
         env_file = ".env"
+        extra = "ignore"
 
 class PersonalityConfig(BaseSettings):
     """Agent personality trait ranges"""
-    trait_ranges = {
+    trait_ranges: dict = Field(default={
         "openness": (0.0, 1.0),
         "conscientiousness": (0.0, 1.0),
         "extraversion": (0.0, 1.0),
         "agreeableness": (0.0, 1.0),
         "neuroticism": (0.0, 1.0)
-    }
+    })
     
-    emotion_ranges = {
+    emotion_ranges: dict = Field(default={
         "happiness": (0.0, 1.0),
         "anger": (0.0, 1.0),
         "fear": (0.0, 1.0),
@@ -90,22 +94,26 @@ class PersonalityConfig(BaseSettings):
         "surprise": (0.0, 1.0),
         "energy": (0.0, 100.0),
         "stress": (0.0, 1.0)
-    }
+    })
     
     # Decay rates per tick
-    emotion_decay_rates = {
+    emotion_decay_rates: dict = Field(default={
         "happiness": 0.01,
         "anger": 0.02,
         "fear": 0.015,
         "sadness": 0.008,
         "surprise": 0.05,
         "stress": 0.012
-    }
+    })
+    
+    class Config:
+        env_file = ".env"
+        extra = "ignore"
 
 class WorldConfig(BaseSettings):
     """World and location configuration"""
     
-    locations = {
+    locations: dict = Field(default={
         "forest": {
             "symbol": "F",
             "type": "natural",
@@ -218,17 +226,21 @@ class WorldConfig(BaseSettings):
             "capacity": 100,
             "resources": []
         }
-    }
+    })
     
     # Time of day effects
-    time_effects = {
+    time_effects: dict = Field(default={
         "dawn": {"energy": 1.1, "happiness": 1.05},
         "morning": {"energy": 1.0, "productivity": 1.2},
         "noon": {"social": 1.3, "trade": 1.2},
         "afternoon": {"energy": 0.9, "social": 1.1},
         "dusk": {"stress": 0.9, "social": 1.4},
         "night": {"energy": 0.7, "rest": 1.5}
-    }
+    })
+    
+    class Config:
+        env_file = ".env"
+        extra = "ignore"
 
 class Settings:
     """Main settings aggregator"""

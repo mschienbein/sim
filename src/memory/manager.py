@@ -262,6 +262,61 @@ class MemoryManager:
         """Initialize the sentence transformer for embeddings"""
         self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
     
+    async def initialize(self):
+        """Initialize memory manager"""
+        await self.connect()
+        self.initialized = True
+    
+    # Compatibility methods for Graphiti interface
+    async def ingest_observation(self, agent_id: str, observation: str, location: str, 
+                                importance: float = 0.5, timestamp: Optional[datetime] = None):
+        """Compatibility wrapper for store_memory"""
+        if not timestamp:
+            timestamp = datetime.now()
+        
+        memory = Memory()
+        memory.id = str(uuid.uuid4())
+        memory.agent_id = agent_id
+        memory.content = observation
+        memory.importance = importance
+        memory.timestamp = timestamp
+        memory.t_valid = timestamp
+        memory.t_invalid = None
+        memory.t_ingested = datetime.now()
+        memory.memory_type = MemoryType.OBSERVATION
+        memory.metadata = {"location": location}
+        memory.references = []
+        memory.embedding = None
+        
+        await self.store_memory(memory)
+    
+    async def ingest_conversation(self, agent_a_id: str, agent_b_id: str, dialogue: List[Tuple[str, str]],
+                                 location: str, timestamp: Optional[datetime] = None):
+        """Compatibility wrapper for storing conversations"""
+        if not timestamp:
+            timestamp = datetime.now()
+        
+        # Format dialogue as conversation
+        content = "\n".join([f"{speaker}: {text}" for speaker, text in dialogue])
+        
+        # Store for both agents
+        for agent_id in [agent_a_id, agent_b_id]:
+            memory = Memory()
+            memory.id = str(uuid.uuid4())
+            memory.agent_id = agent_id
+            memory.content = content
+            memory.importance = 0.7
+            memory.timestamp = timestamp
+            memory.t_valid = timestamp
+            memory.t_invalid = None
+            memory.t_ingested = datetime.now()
+            memory.memory_type = MemoryType.CONVERSATION
+            memory.metadata = {"location": location, "participants": [agent_a_id, agent_b_id]}
+            memory.references = []
+            memory.embedding = None
+            
+            await self.store_memory(memory)
+    
     async def connect(self):
         """Connect to Neo4j database"""
         self.driver = AsyncGraphDatabase.driver(

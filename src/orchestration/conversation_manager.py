@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Any
 import asyncio
 from datetime import datetime
 
-from strands.multiagent.a2a import A2AServer, A2AClientToolProvider
+from strands.multiagent import Swarm
 
 from src.agents.base_agent import SimulationAgent
 from src.config.settings import settings
@@ -18,29 +18,15 @@ class ConversationManager:
     
     def __init__(self):
         self.active_conversations: Dict[str, 'Conversation'] = {}
-        self.a2a_servers: Dict[str, A2AServer] = {}
+        self.swarm = None  # Will be initialized with agents
         self.conversation_history = []
         
     async def setup_a2a_servers(self, agents: Dict[str, SimulationAgent]):
-        """Set up A2A servers for all agents"""
-        base_port = 8000
-        
-        for idx, (agent_id, agent) in enumerate(agents.items()):
-            port = base_port + idx
-            
-            # Create A2A server for each agent
-            server = A2AServer(
-                agent=agent,
-                port=port,
-                host="127.0.0.1"
-            )
-            
-            self.a2a_servers[agent_id] = server
-            
-            # Start server in background
-            asyncio.create_task(server.serve())
-            
-        print(f"✓ Started {len(self.a2a_servers)} A2A servers")
+        """Set up multiagent communication using Swarm"""
+        # Initialize Swarm with agents
+        self.swarm = Swarm()
+        # Setup will be completed in engine.py
+        pass
     
     async def initiate_conversation(
         self,

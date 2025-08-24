@@ -13,6 +13,7 @@ from src.agents.base_agent import SimulationAgent
 from src.agents.sage_agent import SageAgent
 from src.agents.personality import PersonalityGenerator
 from src.memory.graphiti_manager import GraphitiMemoryManager
+from src.memory.manager import MemoryManager
 from src.world.grid import WorldGrid, LocationType
 from src.config.settings import settings
 from src.orchestration.rate_limiter import TokenBudgetManager
@@ -32,7 +33,13 @@ class SimulationEngine:
             width=settings.simulation.world_size[0],
             height=settings.simulation.world_size[1]
         )
-        self.memory_manager = GraphitiMemoryManager()
+        
+        # Choose memory manager based on config
+        if self.config.get("use_graphiti", True):
+            self.memory_manager = GraphitiMemoryManager()
+        else:
+            self.memory_manager = MemoryManager()
+            
         self.token_manager = TokenBudgetManager()
         self.conversation_manager = ConversationManager()
         

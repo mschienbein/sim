@@ -2,7 +2,7 @@
 Grid-based world system with locations and spatial awareness.
 """
 
-from typing import List, Tuple, Optional, Any
+from typing import List, Tuple, Optional, Any, Dict
 from dataclasses import dataclass, field
 from enum import Enum
 import random

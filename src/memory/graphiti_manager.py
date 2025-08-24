@@ -14,10 +14,7 @@ logger = logging.getLogger(__name__)
 from graphiti_core import Graphiti
 from graphiti_core.nodes import EntityNode, EpisodicNode
 from graphiti_core.edges import EntityEdge, EpisodicEdge
-from graphiti_core.embeddings import OpenAIEmbedding
-from graphiti_core.llm import OpenAIClient
-from graphiti_core.search import SearchConfig, SearchMethod
-from neo4j import AsyncGraphDatabase
+# Search functionality updated in newer graphiti versions
 
 from src.config.settings import settings
 
@@ -31,26 +28,33 @@ class GraphitiMemoryManager:
         """Initialize Graphiti with Neo4j backend"""
         self.graphiti = None
         self.initialized = False
+        self._agent_knowledge = {}  # Track agent knowledge locally
         
     async def initialize(self):
         """Set up Graphiti connection and schema"""
-        # Initialize Graphiti with Neo4j
-        self.graphiti = Graphiti(
-            neo4j_uri=settings.neo4j.uri,
-            neo4j_user=settings.neo4j.username,
-            neo4j_password=settings.neo4j.password,
-            neo4j_database=settings.neo4j.database,
-            
-            # LLM config (can override with Bedrock)
-            llm_client=OpenAIClient() if not settings.aws.bedrock_model_id else None,
-            embedding_client=OpenAIEmbedding(),
-            
-            # Graphiti config
-            build_indices=True,
-            use_reranking=True
+        # Use our simple driver that always uses 'simulation' database
+        from src.memory.simple_neo4j_driver import SimulationNeo4jDriver
+        
+        graph_driver = SimulationNeo4jDriver(
+            uri=settings.neo4j.uri,
+            user=settings.neo4j.username,
+            password=settings.neo4j.password
         )
         
-        await self.graphiti.build_indices()
+        # Initialize Graphiti with our driver
+        self.graphiti = Graphiti(
+            uri=None,
+            user=None, 
+            password=None,
+            graph_driver=graph_driver
+        )
+        # Keep a direct reference to the underlying driver to open sessions bound
+        # to the 'simulation' database without relying on Graphiti internals
+        self._graph_driver = graph_driver
+        
+        # Skip indices for now - they're causing auth issues with parallel connections
+        # await self.graphiti.build_indices_and_constraints()
+        
         self.initialized = True
         
         # Define our simulation-specific node and edge types
@@ -280,12 +284,14 @@ class GraphitiMemoryManager:
         }
         
         # Ingest into Graphiti - it will extract entities and relationships
+        # Include metadata in episode body
+        episode_body = f"{episode['content']}\n[Context: {agent_a_id} speaking with {agent_b_id} at {location}]"
+        
         await self.graphiti.add_episode(
             name=episode["name"],
-            episode_body=episode["content"],
+            episode_body=episode_body,
             source_description=f"Conversation between {agent_a_id} and {agent_b_id}",
-            reference_time=timestamp,
-            metadata=episode["metadata"]
+            reference_time=timestamp
         )
         
         # Update SPOKE_WITH relationship
@@ -325,12 +331,14 @@ class GraphitiMemoryManager:
             }
         }
         
+        # Include metadata in episode body since Graphiti doesn't accept metadata param
+        episode_body = f"{observation}\n[Location: {location}, Importance: {importance}]"
+        
         await self.graphiti.add_episode(
             name=episode["name"],
-            episode_body=observation,
+            episode_body=episode_body,
             source_description=f"{agent_id} observed",
-            reference_time=timestamp,
-            metadata=episode["metadata"]
+            reference_time=timestamp
         )
     
     async def ingest_trade(
@@ -357,13 +365,14 @@ class GraphitiMemoryManager:
             "timestamp": timestamp
         }
         
-        # Create trade episode
+        # Create trade episode with metadata in body
+        trade_body = json.dumps(trade_record, indent=2)
+        
         await self.graphiti.add_episode(
             name=f"trade_{from_agent}_{to_agent}_{timestamp.isoformat()}",
-            episode_body=json.dumps(trade_record),
+            episode_body=trade_body,
             source_description=f"Trade between {from_agent} and {to_agent}",
-            reference_time=timestamp,
-            metadata=trade_record
+            reference_time=timestamp
         )
         
         # Update TRADED edge
@@ -396,46 +405,29 @@ class GraphitiMemoryManager:
         knowledge_type = "Fact" if verified else "Rumor"
         
         # Create knowledge node via episode
+        # Include metadata in episode body
+        knowledge_body = f"{fact}\n[Type: {knowledge_type}, Source: {source}, Confidence: {confidence}, Verified: {verified}]"
+        
         await self.graphiti.add_episode(
             name=f"{knowledge_type.lower()}_{agent_id}_{timestamp.isoformat()}",
-            episode_body=fact,
+            episode_body=knowledge_body,
             source_description=f"Knowledge from {source}",
-            reference_time=timestamp,
-            metadata={
-                "agent": agent_id,
-                "type": knowledge_type,
-                "source": source,
-                "confidence": confidence,
-                "verified": verified
-            }
+            reference_time=timestamp
         )
         
-        # Store the knowledge as an entity node first
-        knowledge_node = await self.create_entity_node(
-            node_type=knowledge_type,
-            node_id=str(uuid.uuid4()),
-            name=fact[:100],  # Truncated for name
-            properties={
-                "fact": fact,
-                "confidence": confidence,
-                "source": source,
-                "verified": verified,
-                "timestamp": timestamp.isoformat()
-            }
-        )
-        
-        # Create BELIEVES or KNOWS edge from agent to knowledge
+        # Graphiti will automatically extract entities from the episode
+        # Track the knowledge relationship separately if needed
         edge_type = "KNOWS" if verified else "BELIEVES"
-        await self.create_relationship_edge(
-            from_agent_id=agent_id,
-            to_agent_id=knowledge_node.properties["id"],
-            edge_type=edge_type,
-            attributes={
-                "confidence": confidence,
-                "source": source,
-                "since": timestamp.isoformat()
-            }
-        )
+        
+        # Store knowledge as agent property for quick access
+        if agent_id not in self._agent_knowledge:
+            self._agent_knowledge[agent_id] = []
+        self._agent_knowledge[agent_id].append({
+            "fact": fact,
+            "confidence": confidence,
+            "source": source,
+            "since": timestamp.isoformat()
+        })
     
     async def propagate_rumor(
         self,
@@ -509,16 +501,7 @@ class GraphitiMemoryManager:
         Temporal + semantic search for memories/facts.
         Uses Graphiti's fusion of temporal, full-text, semantic, and graph queries.
         """
-        search_config = SearchConfig(
-            query=query,
-            limit=limit,
-            search_methods=[
-                SearchMethod.SEMANTIC,
-                SearchMethod.FULL_TEXT,
-                SearchMethod.GRAPH_TRAVERSAL
-            ],
-            rerank=True
-        )
+        # Updated search API for newer graphiti version
         
         # Add temporal filters
         filters = {}
@@ -531,11 +514,10 @@ class GraphitiMemoryManager:
         if memory_types:
             filters["type"] = {"$in": memory_types}
         
-        # Execute search via Graphiti
+        # Execute search via Graphiti with new API
         results = await self.graphiti.search(
             query=query,
-            config=search_config,
-            filters=filters
+            num_results=limit
         )
         
         # Format results
@@ -673,17 +655,14 @@ class GraphitiMemoryManager:
         reflection += f"Key themes: {', '.join(themes)}. "
         
         # Store reflection as high-level fact
+        # Include metadata in reflection body
+        reflection_body = f"{reflection}\n[Themes: {', '.join(themes)}, Memory count: {len(recent_memories)}]"
+        
         await self.graphiti.add_episode(
             name=f"reflection_{agent_id}_{datetime.now().isoformat()}",
-            episode_body=reflection,
+            episode_body=reflection_body,
             source_description=f"{agent_id}'s daily reflection",
-            reference_time=datetime.now(),
-            metadata={
-                "agent": agent_id,
-                "type": "Reflection",
-                "memory_count": len(recent_memories),
-                "themes": themes
-            }
+            reference_time=datetime.now()
         )
         
         # Prune low-importance memories (Graphiti handles this efficiently)
@@ -703,10 +682,8 @@ class GraphitiMemoryManager:
         Create or update a specific relationship edge between agents.
         Uses Neo4j directly for custom edge types.
         """
-        async with AsyncGraphDatabase.driver(
-            settings.neo4j.uri,
-            auth=(settings.neo4j.username, settings.neo4j.password)
-        ).session() as session:
+        # Reuse the SimulationNeo4jDriver session, already bound to 'simulation'
+        async with self._graph_driver.session() as session:
             
             # Ensure both agents exist as nodes
             await session.run(

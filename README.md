@@ -14,7 +14,7 @@ A sophisticated multi-agent simulation where AI agents develop distinct personal
 
 ## 🏗️ Architecture
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed system design.
+See [docs/ARCHITECTURE.md](ARCHITECTURE.md) for detailed system design.
 
 ### Key Components
 - **Agents**: Autonomous entities with personalities, memories, and tools
@@ -83,9 +83,19 @@ This starts:
 - **Neo4j Exporter** - Prometheus metrics from Neo4j
 - **Node Exporter** - System metrics
 
-4. **Run the simulation**
+4. **Install Python dependencies**
 ```bash
-# In a separate terminal, with services running
+# Create and activate virtual environment (required on macOS/Linux)
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install the simulation package
+pip install -e .
+```
+
+5. **Run the simulation**
+```bash
+# With virtual environment activated and services running
 python -m src.main --agents 5 --days 3
 ```
 
