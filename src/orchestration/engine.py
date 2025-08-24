@@ -226,12 +226,15 @@ class SimulationEngine:
                         verified=True
                     )
     
-    async def run_simulation(self, days: int = 10):
+    async def run_simulation(self, days: int = 10, start_day: int = 0):
         """Run the main simulation loop"""
         self.running = True
-        print(f"\n🎭 Starting simulation for {days} days...")
+        if start_day > 0:
+            print(f"\n🎭 Continuing simulation from day {start_day + 1} for {days} more days...")
+        else:
+            print(f"\n🎭 Starting simulation for {days} days...")
         
-        for day in range(days):
+        for day in range(start_day, start_day + days):
             if not self.running:
                 break
             
@@ -297,19 +300,47 @@ class SimulationEngine:
         await self._print_final_summary()
     
     async def _gather_perceptions(self, world_state: Dict[str, Any]) -> Dict[str, Dict]:
-        """Gather perceptions for all agents"""
+        """Gather perceptions for all agents - optimized to batch context queries"""
+        import asyncio
+        
         perceptions = {}
         
+        # First collect all location info
+        location_infos = {}
         for agent_id, agent in self.agents.items():
-            # Get location info
-            location_info = self.world.get_location_info(agent.location, agent_id)
-            
-            # Get agent context from Graphiti
-            context = await self.memory_manager.get_agent_context(
-                agent_id=agent_id,
-                location=location_info["name"],
-                nearby_agents=location_info.get("nearby_agents", [])
+            location_infos[agent_id] = self.world.get_location_info(agent.location, agent_id)
+        
+        # Batch all context queries together
+        context_tasks = []
+        agent_ids = []
+        for agent_id, agent in self.agents.items():
+            location_info = location_infos[agent_id]
+            context_tasks.append(
+                self.memory_manager.get_agent_context(
+                    agent_id=agent_id,
+                    location=location_info["name"],
+                    nearby_agents=location_info.get("nearby_agents", [])
+                )
             )
+            agent_ids.append(agent_id)
+        
+        # Execute all context queries in parallel
+        contexts = await asyncio.gather(*context_tasks, return_exceptions=True)
+        
+        # Build perceptions with results
+        for i, agent_id in enumerate(agent_ids):
+            agent = self.agents[agent_id]
+            location_info = location_infos[agent_id]
+            
+            # Handle context result
+            context = contexts[i] if not isinstance(contexts[i], Exception) else {
+                "recent_memories": [],
+                "relationships": {},
+                "location_facts": [],
+                "active_rumors": [],
+                "personal_goals": [],
+                "pending_contracts": []
+            }
             
             perceptions[agent_id] = {
                 "world_state": world_state,
@@ -362,10 +393,35 @@ class SimulationEngine:
         agent: SimulationAgent,
         perception: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Make decision for an agent based on perception"""
+        """Make decision for an agent based on perception AND graph memories"""
         nearby_agents = perception["location"].get("nearby_agents", [])
         location_type = perception["location"]["type"]
         energy = perception["internal_state"]["energy"]
+        
+        # Get context from graph - THIS IS THE KEY IMPROVEMENT
+        # The context contains memories, relationships, and goals from the graph
+        context = perception.get("context", {})
+        recent_memories = context.get("recent_memories", [])
+        relationships = context.get("relationships", {})
+        personal_goals = context.get("personal_goals", [])
+        
+        # Use memories to influence decisions
+        # For example, avoid agents we have negative relationships with
+        if nearby_agents and relationships:
+            # Filter out agents with negative relationships
+            friendly_agents = [
+                agent_id for agent_id in nearby_agents
+                if relationships.get(agent_id, {}).get("friendship", 0) >= 0
+            ]
+            if friendly_agents:
+                nearby_agents = friendly_agents
+        
+        # Check recent memories for relevant patterns
+        recent_actions = [m for m in recent_memories if "action" in str(m).lower()]
+        if recent_actions and "trade" in str(recent_actions[-1]).lower():
+            # Recently traded, maybe do something else
+            if random.random() < 0.7:
+                return {"action": "observe", "reason": "Just finished trading"}
         
         # Priority-based decision making
         if energy < 20:
@@ -583,22 +639,24 @@ class SimulationEngine:
     async def _save_checkpoint(self):
         """Save simulation state"""
         checkpoint = {
-            "day": self.current_day,
-            "tick": self.current_tick,
+            "current_day": self.current_day,
+            "current_tick": self.current_tick,
             "agents": {
                 agent_id: agent.to_save_state()
                 for agent_id, agent in self.agents.items()
             },
             "metrics": self.metrics,
+            "event_log": self.event_log[-100:] if hasattr(self, 'event_log') else [],  # Keep last 100 events
             "token_usage": self.token_manager.get_usage_report()
         }
         
-        # Save to file
-        filename = f"checkpoint_day_{self.current_day}.json"
+        # Save to file with pickle for better state preservation
+        filename = f"checkpoint_day_{self.current_day}.pkl"
         filepath = settings.checkpoints_dir / filename
         
-        with open(filepath, 'w') as f:
-            json.dump(checkpoint, f, indent=2, default=str)
+        import pickle
+        with open(filepath, 'wb') as f:
+            pickle.dump(checkpoint, f)
     
     def _record_metrics(self):
         """Record simulation metrics"""

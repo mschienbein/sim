@@ -18,6 +18,7 @@ from graphiti_core.edges import EntityEdge, EpisodicEdge
 # Search functionality updated in newer graphiti versions
 
 from src.config.settings import settings
+from src.memory.optimizations import GraphitiOptimizer, QueryOptimizer, RequestHandler
 
 class GraphitiMemoryManager:
     """
@@ -30,50 +31,214 @@ class GraphitiMemoryManager:
         self.graphiti = None
         self.initialized = False
         self._agent_knowledge = {}  # Track agent knowledge locally
+        self._context_cache = {}  # Cache for agent contexts
+        self._cache_ttl = 60  # Cache TTL in seconds
+        self.simulation_run_id = None  # Will be set during initialize
         
-    async def initialize(self):
+    async def store_memory(
+        self,
+        agent_id: str,
+        memory_type: str,
+        content: str,
+        metadata: Optional[Dict] = None,
+        timestamp: Optional[datetime] = None
+    ):
+        """
+        Store a memory for an agent. Wrapper for compatibility with agent code.
+        Maps to appropriate Graphiti storage methods.
+        """
+        if not timestamp:
+            timestamp = datetime.now()
+        
+        if not metadata:
+            metadata = {}
+        
+        # Add agent_id and memory_type to metadata
+        metadata['agent_id'] = agent_id
+        metadata['memory_type'] = memory_type
+        
+        # Construct episode body
+        episode_body = f"{agent_id}: {content}"
+        
+        # Store based on memory type
+        if memory_type == "observation":
+            await self.store_observation(
+                agent_id=agent_id,
+                observation=content,
+                location=metadata.get('location', 'unknown'),
+                importance=metadata.get('importance', 0.5),
+                timestamp=timestamp
+            )
+        elif memory_type == "conversation":
+            # For simple conversation storage
+            await self._add_episode_safe(
+                name=f"conversation_{agent_id}_{timestamp.isoformat()}",
+                episode_body=episode_body,
+                source_description=f"{agent_id} conversation",
+                reference_time=timestamp,
+                metadata=metadata
+            )
+        elif memory_type == "action":
+            await self._add_episode_safe(
+                name=f"action_{agent_id}_{timestamp.isoformat()}",
+                episode_body=episode_body,
+                source_description=f"{agent_id} action",
+                reference_time=timestamp,
+                metadata=metadata
+            )
+        elif memory_type == "reflection":
+            await self._add_episode_safe(
+                name=f"reflection_{agent_id}_{timestamp.isoformat()}",
+                episode_body=episode_body,
+                source_description=f"{agent_id} reflection",
+                reference_time=timestamp,
+                metadata=metadata
+            )
+        elif memory_type == "learned":
+            await self.store_knowledge(
+                agent_id=agent_id,
+                knowledge_type="Fact",
+                content=content,
+                source=metadata.get('source', 'experience'),
+                confidence=metadata.get('confidence', 0.8),
+                timestamp=timestamp
+            )
+        else:
+            # Default: store as generic episode
+            await self._add_episode_safe(
+                name=f"{memory_type}_{agent_id}_{timestamp.isoformat()}",
+                episode_body=episode_body,
+                source_description=f"{agent_id} {memory_type}",
+                reference_time=timestamp,
+                metadata=metadata
+            )
+    
+    async def _add_episode_safe(
+        self,
+        name: str,
+        episode_body: str,
+        source_description: str,
+        reference_time: datetime,
+        metadata: Optional[Dict] = None,
+        max_length: int = 2000
+    ):
+        """
+        Safely add episode with truncation and timeout handling.
+        Prevents JSON parsing errors from oversized responses.
+        """
+        # Truncate episode body if too long
+        if len(episode_body) > max_length:
+            episode_body = episode_body[:max_length - 3] + "..."
+            logger.debug(f"Truncated episode body from {len(episode_body)} to {max_length}")
+        
+        try:
+            # Use timeout handler
+            result = await RequestHandler.with_timeout(
+                self.graphiti.add_episode(
+                    name=name,
+                    episode_body=episode_body,
+                    source_description=source_description,
+                    reference_time=reference_time,
+                    group_id=self.simulation_run_id
+                ),
+                timeout_seconds=30
+            )
+            
+            if result is None:
+                logger.warning(f"Episode add timed out for {name}")
+                return None
+                
+            return result
+            
+        except Exception as e:
+            # Handle JSON parsing errors specifically
+            if "Invalid JSON" in str(e) or "EOF while parsing" in str(e):
+                logger.warning(f"JSON parsing error, retrying with shorter content: {e}")
+                # Retry with even shorter content
+                if max_length > 500:
+                    return await self._add_episode_safe(
+                        name=name,
+                        episode_body=episode_body[:500],
+                        source_description=source_description,
+                        reference_time=reference_time,
+                        metadata=metadata,
+                        max_length=500
+                    )
+            logger.error(f"Failed to add episode {name}: {e}")
+            return None
+    
+    async def initialize(self, simulation_run_id: Optional[str] = None):
         """Set up Graphiti connection and schema"""
-        # Use Graphiti's official Neo4jDriver pinned to the configured database (simulation)
+        # Generate or use provided simulation run ID
+        self.simulation_run_id = simulation_run_id or f"sim_run_{uuid.uuid4().hex[:8]}"
+        
         logger.info(
-            "Initializing Graphiti Neo4j driver",
+            "Initializing Graphiti for simulation run",
             extra={
                 "neo4j_uri": settings.neo4j.uri,
                 "neo4j_database": settings.neo4j.database,
                 "user": settings.neo4j.username,
+                "simulation_run_id": self.simulation_run_id,
             },
         )
-        graph_driver = Neo4jDriver(
+        
+        # Create Neo4j driver with the correct database
+        from graphiti_core.driver.neo4j_driver import Neo4jDriver
+        
+        neo4j_driver = Neo4jDriver(
             uri=settings.neo4j.uri,
             user=settings.neo4j.username,
             password=settings.neo4j.password,
-            database=settings.neo4j.database,
+            database=settings.neo4j.database  # Use 'simulation' database
         )
         
-        # Initialize Graphiti with our driver
+        # Initialize Graphiti with the driver
         self.graphiti = Graphiti(
-            uri=None,
-            user=None, 
-            password=None,
-            graph_driver=graph_driver
+            graph_driver=neo4j_driver,
+            # Optimize for performance
+            max_coroutines=20,  # Allow more parallel processing
+            store_raw_episode_content=False,  # Don't store raw content to save space
+            ensure_ascii=False,  # Allow unicode without escaping
         )
-        # Keep a direct reference to the underlying driver to open sessions bound
-        # to the 'simulation' database without relying on Graphiti internals
-        self._graph_driver = graph_driver
         
-        # Build indices & constraints once (idempotent). If they've already been created,
-        # or Neo4j is unavailable, log and continue so the app doesn't hang.
+        # Build indices & constraints once (idempotent)
         try:
             await self.graphiti.build_indices_and_constraints()
             logger.info("Graphiti indices and constraints ensured")
         except Exception as e:
             logger.warning(f"Skipping build_indices_and_constraints: {e}")
         
+        # Create simulation run node to isolate this run
+        await self._create_simulation_run_node()
+        
         self.initialized = True
-        logger.info("Graphiti memory initialized successfully")
+        logger.info(f"Graphiti memory initialized for run {self.simulation_run_id}")
         
         # Define our simulation-specific node and edge types
         await self._register_simulation_schema()
         logger.debug("Simulation schema registered for Graphiti")
+    
+    async def _create_simulation_run_node(self):
+        """Create a simulation run node to group all entities from this run"""
+        try:
+            # Use Graphiti's internal driver (already configured with correct database)
+            async with self.graphiti.driver.session() as session:
+                result = await session.run(
+                    """
+                    MERGE (r:SimulationRun {id: $run_id})
+                    ON CREATE SET 
+                        r.created_at = datetime(),
+                        r.status = 'active'
+                    RETURN r.id as run_id
+                    """,
+                    run_id=self.simulation_run_id
+                )
+                record = await result.single()
+                if record:
+                    logger.info(f"Created/found simulation run node: {record['run_id']}")
+        except Exception as e:
+            logger.warning(f"Could not create simulation run node: {e}")
+            # Continue anyway - the simulation can work without it
     
     async def _register_simulation_schema(self):
         """Register custom node and edge types for the simulation"""
@@ -324,11 +489,11 @@ class GraphitiMemoryManager:
                     "body_preview": self._preview(episode_body),
                 },
             )
-            await self.graphiti.add_episode(
+            await self._add_episode_safe(
                 name=episode["name"],
                 episode_body=episode_body,
                 source_description=f"Conversation between {agent_a_id} and {agent_b_id}",
-                reference_time=timestamp,
+                reference_time=timestamp
             )
         except Exception as e:
             invalid_json = None
@@ -414,11 +579,11 @@ class GraphitiMemoryManager:
                     "body_preview": self._preview(episode_body),
                 },
             )
-            await self.graphiti.add_episode(
+            await self._add_episode_safe(
                 name=episode["name"],
                 episode_body=episode_body,
                 source_description=f"{agent_id} observed",
-                reference_time=timestamp,
+                reference_time=timestamp
             )
         except Exception as e:
             invalid_json = None
@@ -499,11 +664,11 @@ class GraphitiMemoryManager:
                     "body_preview": self._preview(trade_body),
                 },
             )
-            await self.graphiti.add_episode(
+            await self._add_episode_safe(
                 name=f"trade_{from_agent}_{to_agent}_{timestamp.isoformat()}",
                 episode_body=trade_body,
                 source_description=f"Trade between {from_agent} and {to_agent}",
-                reference_time=timestamp,
+                reference_time=timestamp
             )
         except Exception as e:
             invalid_json = None
@@ -579,11 +744,11 @@ class GraphitiMemoryManager:
                     "body_preview": self._preview(knowledge_body),
                 },
             )
-            await self.graphiti.add_episode(
+            await self._add_episode_safe(
                 name=f"{knowledge_type.lower()}_{agent_id}_{timestamp.isoformat()}",
                 episode_body=knowledge_body,
                 source_description=f"Knowledge from {source}",
-                reference_time=timestamp,
+                reference_time=timestamp
             )
         except Exception as e:
             invalid_json = None
@@ -716,11 +881,12 @@ class GraphitiMemoryManager:
         if memory_types:
             filters["type"] = {"$in": memory_types}
         
-        # Execute search via Graphiti with new API
+        # Execute search via Graphiti with new API, filtered by simulation run
         try:
             results = await self.graphiti.search(
                 query=query,
-                num_results=limit
+                num_results=limit,
+                group_ids=[self.simulation_run_id]  # Only search within this run
             )
         except Exception:
             logger.exception(
@@ -736,14 +902,15 @@ class GraphitiMemoryManager:
         # Format results
         formatted_results = []
         for result in results:
+            # EntityEdge has 'fact' not 'content', and 'attributes' not 'metadata'
             formatted_results.append({
-                "content": result.content,
+                "content": result.fact,
                 "timestamp": result.created_at,
-                "importance": result.metadata.get("importance", 0.5),
-                "type": result.metadata.get("type", "Memory"),
-                "confidence": result.metadata.get("confidence", 1.0),
-                "source": result.metadata.get("source", "unknown"),
-                "relevance_score": result.relevance_score
+                "importance": result.attributes.get("importance", 0.5) if result.attributes else 0.5,
+                "type": result.attributes.get("type", "Memory") if result.attributes else "Memory",
+                "confidence": result.attributes.get("confidence", 1.0) if result.attributes else 1.0,
+                "source": result.attributes.get("source", "unknown") if result.attributes else "unknown",
+                "relevance_score": getattr(result, 'relevance_score', 0.0)
             })
         
         return formatted_results
@@ -842,8 +1009,20 @@ class GraphitiMemoryManager:
     ) -> Dict[str, Any]:
         """
         Get comprehensive context for an agent's turn.
-        Combines temporal memories, relationships, location facts, and goals.
+        Optimized version that batches queries together using asyncio.gather.
+        Includes caching to reduce repeated queries.
         """
+        import asyncio
+        import time
+        
+        # Check cache first
+        cache_key = f"{agent_id}:{location}:{','.join(sorted(nearby_agents))}"
+        if cache_key in self._context_cache:
+            cached_time, cached_context = self._context_cache[cache_key]
+            if time.time() - cached_time < self._cache_ttl:
+                logger.debug(f"Using cached context for {agent_id}")
+                return cached_context
+        
         context = {
             "recent_memories": [],
             "relationships": {},
@@ -853,42 +1032,86 @@ class GraphitiMemoryManager:
             "pending_contracts": []
         }
         
-        # Recent memories (last 24 hours)
         since = datetime.now() - timedelta(hours=24)
-        context["recent_memories"] = await self.search_temporal(
-            query=f"agent {agent_id} recent events",
-            agent_id=agent_id,
-            since=since,
-            limit=10
-        )
         
-        # Relationships with nearby agents
-        for other_agent in nearby_agents:
-            rel = await self._get_relationship_strength(agent_id, other_agent)
-            context["relationships"][other_agent] = rel
+        # Batch all search queries together for parallel execution
+        search_tasks = [
+            # Recent memories
+            self.search_temporal(
+                query=f"agent {agent_id} recent events",
+                agent_id=agent_id,
+                since=since,
+                limit=10
+            ),
+            # Location-specific facts
+            self.search_temporal(
+                query=f"location {location}",
+                memory_types=["Fact", "Observation"],
+                limit=5
+            ),
+            # Active rumors
+            self.search_temporal(
+                query="rumors gossip news",
+                agent_id=agent_id,
+                memory_types=["Rumor"],
+                limit=5
+            ),
+            # Personal goals
+            self.search_temporal(
+                query=f"goals objectives plans",
+                agent_id=agent_id,
+                memory_types=["Fact"],
+                limit=3
+            )
+        ]
         
-        # Location-specific facts
-        context["location_facts"] = await self.search_temporal(
-            query=f"location {location}",
-            memory_types=["Fact", "Observation"],
-            limit=5
-        )
+        # Batch relationship queries
+        relationship_tasks = [
+            self._get_relationship_strength(agent_id, other_agent)
+            for other_agent in nearby_agents
+        ]
         
-        # Active rumors the agent believes
-        context["active_rumors"] = await self.search_temporal(
-            query="rumors gossip news",
-            agent_id=agent_id,
-            memory_types=["Rumor"],
-            limit=5
-        )
+        # Execute all queries in parallel
+        try:
+            search_results = await asyncio.gather(*search_tasks, return_exceptions=True)
+            relationship_results = await asyncio.gather(*relationship_tasks, return_exceptions=True) if relationship_tasks else []
+            
+            # Process search results
+            if not isinstance(search_results[0], Exception):
+                context["recent_memories"] = search_results[0]
+            if not isinstance(search_results[1], Exception):
+                context["location_facts"] = search_results[1]
+            if not isinstance(search_results[2], Exception):
+                context["active_rumors"] = search_results[2]
+            if not isinstance(search_results[3], Exception):
+                context["personal_goals"] = search_results[3]
+            
+            # Process relationship results
+            for i, other_agent in enumerate(nearby_agents):
+                if i < len(relationship_results) and not isinstance(relationship_results[i], Exception):
+                    context["relationships"][other_agent] = relationship_results[i]
+                else:
+                    context["relationships"][other_agent] = {
+                        "trust": 0.0,
+                        "friendship": 0.0,
+                        "familiarity": 0.0,
+                        "last_interaction": None
+                    }
+                    
+        except Exception as e:
+            logger.error(f"Error batching context queries: {e}")
         
-        # Personal goals (stored as special facts)
-        context["personal_goals"] = await self.search_temporal(
-            query=f"goals objectives plans",
-            agent_id=agent_id,
-            memory_types=["Fact"],
-            limit=3
-        )
+        # Cache the context
+        import time
+        self._context_cache[cache_key] = (time.time(), context)
+        
+        # Clean old cache entries if cache is getting large
+        if len(self._context_cache) > 100:
+            current_time = time.time()
+            self._context_cache = {
+                k: v for k, v in self._context_cache.items()
+                if current_time - v[0] < self._cache_ttl
+            }
         
         return context
     
@@ -933,11 +1156,11 @@ class GraphitiMemoryManager:
                     "body_preview": self._preview(reflection_body),
                 },
             )
-            await self.graphiti.add_episode(
+            await self._add_episode_safe(
                 name=f"reflection_{agent_id}_{datetime.now().isoformat()}",
                 episode_body=reflection_body,
                 source_description=f"{agent_id}'s daily reflection",
-                reference_time=datetime.now(),
+                reference_time=datetime.now()
             )
         except Exception:
             logger.exception(
@@ -1414,7 +1637,7 @@ class GraphitiMemoryManager:
         
         for edge in edges:
             if edge.name == "TRUSTS":
-                relationship["trust"] = edge.metadata.get("weight", 0.0)
+                relationship["trust"] = edge.attributes.get("weight", 0.0) if edge.attributes else 0.0
             elif edge.name == "SPOKE_WITH":
                 relationship["familiarity"] += 0.1
                 relationship["last_interaction"] = edge.created_at

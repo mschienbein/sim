@@ -45,7 +45,8 @@ def run(
     config_file: Optional[Path] = typer.Option(None, "--config", "-c", help="Configuration file"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug mode"),
     trace: bool = typer.Option(False, "--trace", help="Enable detailed per-tick step/action logs"),
-    no_graphiti: bool = typer.Option(False, "--no-graphiti", help="Use basic memory instead of Graphiti")
+    no_graphiti: bool = typer.Option(False, "--no-graphiti", help="Use basic memory instead of Graphiti"),
+    continue_from: Optional[Path] = typer.Option(None, "--continue", help="Continue from checkpoint file")
 ):
     """
     Run the agent simulation.
@@ -76,6 +77,27 @@ def run(
     config["trace"] = trace
     config["use_graphiti"] = not no_graphiti
     
+    # Handle checkpoint loading
+    checkpoint_data = None
+    if continue_from:
+        if not continue_from.exists():
+            console.print(f"[red]Checkpoint file not found: {continue_from}[/red]")
+            return
+        
+        import pickle
+        console.print(f"[yellow]Loading checkpoint from {continue_from}...[/yellow]")
+        with open(continue_from, 'rb') as f:
+            checkpoint_data = pickle.load(f)
+        
+        # Override config with checkpoint settings
+        config["checkpoint_data"] = checkpoint_data
+        config["max_agents"] = len(checkpoint_data["agents"])
+        
+        # Adjust days if continuing
+        completed_days = checkpoint_data["current_day"]
+        config["start_day"] = completed_days
+        console.print(f"[green]Resuming from day {completed_days}[/green]")
+    
     # Configure logging (ensure our engine/Graphiti logs are visible)
     log_level = logging.DEBUG if (debug or trace) else logging.INFO
     logging.basicConfig(
@@ -83,8 +105,19 @@ def run(
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
     
+    # Reduce Neo4j connection noise when debugging
+    if debug or trace:
+        logging.getLogger("neo4j").setLevel(logging.WARNING)
+        logging.getLogger("neo4j.io").setLevel(logging.WARNING)
+        logging.getLogger("neo4j.pool").setLevel(logging.WARNING)
+        logging.getLogger("httpcore").setLevel(logging.INFO)
+        logging.getLogger("httpx").setLevel(logging.INFO)
+    
     # Run simulation
-    console.print(f"\n[green]Starting simulation with {agents} agents for {days} days...[/green]")
+    if continue_from:
+        console.print(f"\n[green]Continuing simulation with {config['max_agents']} agents for {days} more days...[/green]")
+    else:
+        console.print(f"\n[green]Starting simulation with {agents} agents for {days} days...[/green]")
     
     try:
         asyncio.run(run_simulation(config))
@@ -100,28 +133,72 @@ async def run_simulation(config: dict):
     # Create engine
     engine = SimulationEngine(config)
     
-    # Initialize with progress display
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console
-    ) as progress:
-        init_task = progress.add_task("Initializing simulation...", total=None)
-        await engine.initialize()
-        progress.update(init_task, completed=True)
+    # Check if we're continuing from a checkpoint
+    if "checkpoint_data" in config:
+        checkpoint = config["checkpoint_data"]
+        
+        # Initialize with checkpoint restoration
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console
+        ) as progress:
+            init_task = progress.add_task("Restoring from checkpoint...", total=None)
+            
+            # Initialize engine first
+            await engine.initialize()
+            
+            # Restore state from checkpoint
+            engine.current_day = checkpoint["current_day"]
+            engine.current_tick = checkpoint["current_tick"]
+            engine.metrics = checkpoint["metrics"]
+            engine.event_log = checkpoint["event_log"]
+            
+            # Restore agent states
+            for agent_id, agent_state in checkpoint["agents"].items():
+                if agent_id in engine.agents:
+                    agent = engine.agents[agent_id]
+                    agent.state = agent_state["state"]
+                    agent.location = tuple(agent_state["location"])
+                    agent.goals = agent_state["goals"]
+                    agent.relationships = agent_state["relationships"]
+                    agent.inventory = agent_state["inventory"]
+                    agent.health = agent_state["health"]
+                    agent.energy = agent_state["energy"]
+            
+            progress.update(init_task, completed=True)
+            console.print(f"[green]✓ Restored {len(engine.agents)} agents from checkpoint[/green]")
+        
+        # Calculate remaining days
+        start_day = config.get("start_day", 0)
+        total_days = config["max_days"]
+        
+    else:
+        # Normal initialization
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console
+        ) as progress:
+            init_task = progress.add_task("Initializing simulation...", total=None)
+            await engine.initialize()
+            progress.update(init_task, completed=True)
+        
+        start_day = 0
+        total_days = config["max_days"]
     
     # Run simulation with live dashboard if not in debug mode
     if config.get("debug"):
         # Simple run without live display
-        await engine.run_simulation(days=config["max_days"])
+        await engine.run_simulation(days=total_days, start_day=start_day)
     else:
         # Run with live dashboard
-        await run_with_dashboard(engine, config["max_days"])
+        await run_with_dashboard(engine, total_days, start_day)
     
     # Cleanup
     await engine.stop()
 
-async def run_with_dashboard(engine: SimulationEngine, days: int):
+async def run_with_dashboard(engine: SimulationEngine, days: int, start_day: int = 0):
     """Run simulation with live dashboard display"""
     
     def make_layout() -> Layout:
@@ -234,11 +311,11 @@ async def run_with_dashboard(engine: SimulationEngine, days: int):
         # Run simulation
         original_run = engine.run_simulation
         
-        async def run_with_updates(days: int):
+        async def run_with_updates(days: int, start_day: int):
             """Wrapper to update display during simulation"""
             engine.running = True
             
-            for day in range(days):
+            for day in range(start_day, start_day + days):
                 if not engine.running:
                     break
                 
@@ -284,7 +361,8 @@ async def run_with_dashboard(engine: SimulationEngine, days: int):
             await engine._print_final_summary()
         
         # Run with display updates
-        await run_with_updates(days)
+        await run_with_updates(days, start_day)
+
 
 @app.command()
 def view(
