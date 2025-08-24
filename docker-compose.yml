@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  neo4j:
+    image: neo4j:5.26-community
+    container_name: sim-neo4j
+    ports:
+      - "7474:7474"  # HTTP
+      - "7687:7687"  # Bolt
+    environment:
+      - NEO4J_AUTH=neo4j/simulation123
+      - NEO4J_PLUGINS=["apoc", "graph-data-science"]
+      - NEO4J_dbms_memory_pagecache_size=1G
+      - NEO4J_dbms_memory_heap_max__size=1G
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    networks:
+      - sim-network
+
+  # Optional: Grafana for metrics visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: sim-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_INSTALL_PLUGINS=neo4j-datasource
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - sim-network
+
+volumes:
+  neo4j_data:
+  neo4j_logs:
+  grafana_data:
+
+networks:
+  sim-network:
+    driver: bridge
