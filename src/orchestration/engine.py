@@ -4,7 +4,6 @@ Main simulation engine that orchestrates agent interactions and world state.
 
 import asyncio
 from typing import Dict, List, Optional, Any, Tuple
-from datetime import datetime, timedelta
 import json
 import random
 from collections import defaultdict

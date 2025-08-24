@@ -45,20 +45,43 @@ cp .env.example .env
 ```
 
 3. **Start services with Docker Compose**
+
+**Option A: Using Makefile (Recommended)**
 ```bash
 # Initial setup (creates directories, copies env)
 make setup
 
 # Start all services
 make up
+
+# Check service health
+make status
+```
+
+**Option B: Using Docker Compose directly**
+```bash
+# Create necessary directories
+mkdir -p monitoring/prometheus monitoring/grafana/provisioning/datasources
+mkdir -p notebooks data logs neo4j/conf
+
+# Start all services
+docker compose up -d
+
+# View logs
+docker compose logs -f
+
+# Stop services
+docker compose down
 ```
 
 This starts:
-- Neo4j (http://localhost:7474) - Graph database
-- Grafana (http://localhost:3000) - Metrics dashboard (admin/admin)
-- Prometheus (http://localhost:9090) - Metrics collection
-- Redis - Caching layer
-- Jupyter (http://localhost:8888) - Analysis notebooks (token: simulation123)
+- **Neo4j** (http://localhost:7474) - Graph database for agent memories
+- **Grafana** (http://localhost:3000) - Metrics dashboard (admin/admin)
+- **Prometheus** (http://localhost:9090) - Metrics collection
+- **Redis** (localhost:6379) - Caching and session management
+- **Jupyter** (http://localhost:8888) - Analysis notebooks (token: simulation123)
+- **Neo4j Exporter** - Prometheus metrics from Neo4j
+- **Node Exporter** - System metrics
 
 4. **Run the simulation**
 ```bash
@@ -136,8 +159,8 @@ Edit `.env` file for customization:
 ```env
 # LLM Configuration
 OPENAI_API_KEY=your-api-key
-OPENAI_MODEL_ID=gpt-4
-OPENAI_SAGE_MODEL_ID=gpt-4
+OPENAI_MODEL_ID=gpt-5        # Primary model for agents
+OPENAI_SAGE_MODEL_ID=gpt-5   # Model for sage agent
 
 # Simulation Parameters
 MAX_AGENTS=5
@@ -145,8 +168,8 @@ MAX_DAYS=10
 TICKS_PER_DAY=24
 
 # Rate Limiting
-DAILY_TOKEN_BUDGET=100000
-PER_AGENT_TOKEN_LIMIT=20000
+DAILY_TOKEN_BUDGET=1000000    # 1M tokens/day (~$5 with GPT-5)
+PER_AGENT_TOKEN_LIMIT=200000  # 200k tokens per agent
 
 # Neo4j (automatically configured by docker-compose)
 NEO4J_URI=bolt://localhost:7687
@@ -154,26 +177,72 @@ NEO4J_USERNAME=neo4j
 NEO4J_PASSWORD=simulation123
 ```
 
+### Token Budget & Model Selection
+
+The simulation uses intelligent model selection based on action priority and remaining budget:
+
+- **Daily Budget**: 1,000,000 tokens (~$5/day with GPT-5)
+- **Per-Agent Limit**: 200,000 tokens (prevents single agent from consuming all tokens)
+- **Model Costs**:
+  - GPT-5: $0.005 per 1k tokens (primary model for rich interactions)
+  - GPT-4o: $0.0025 per 1k tokens (fallback when budget < 30%)
+  - GPT-4o-mini: $0.00015 per 1k tokens (emergency fallback)
+
+**Dynamic Model Selection**:
+- High-priority actions (reflect, web_search): GPT-5 if budget > 20%, else GPT-4o
+- Medium-priority actions (speak, trade): GPT-5 if budget > 60%, GPT-4o if > 30%
+- Low-priority actions (move, observe): GPT-5 if budget > 80%, else GPT-4o/mini
+- The system automatically downgrades models as daily budget depletes
+
 ## 🛠️ Useful Commands
 
+### Using Makefile
 ```bash
 # Service management
+make setup       # Initial setup (directories, env file)
 make up          # Start all services
 make down        # Stop all services
 make restart     # Restart services
-make status      # Check service status
-make logs        # View all logs
-make neo4j       # View Neo4j logs
+make status      # Check service status and port availability
+make logs        # View all logs (follow mode)
 
-# Database
+# Database operations
+make neo4j       # View Neo4j logs
 make neo4j-shell # Access Neo4j cypher shell
-make neo4j-backup # Backup Neo4j data
+make neo4j-backup # Backup Neo4j database
+
+# Redis operations  
+make redis       # View Redis logs
+make redis-cli   # Access Redis CLI
 
 # Monitoring
-make monitoring  # Open Grafana dashboard
+make monitoring  # Open Grafana dashboard in browser
+
+# Development
+make dev-setup   # Setup and start everything
+make dev-reset   # Clean reset of environment
 
 # Cleanup
-make clean       # Remove all data (careful!)
+make clean       # Remove all data and volumes (careful!)
+```
+
+### Using Docker Compose Directly
+```bash
+# Start services
+docker compose up -d
+
+# Stop services
+docker compose down
+
+# View logs
+docker compose logs -f [service-name]
+
+# Execute commands in containers
+docker exec -it sim-neo4j cypher-shell -u neo4j -p simulation123
+docker exec -it sim-redis redis-cli
+
+# Remove everything including volumes
+docker compose down -v
 ```
 
 ## Understanding the Simulation
@@ -204,9 +273,9 @@ Agents use Graphiti's temporal knowledge graph to:
 ## Monitoring & Costs
 
 ### Token Usage
-- Daily budget: 100,000 tokens (configurable)
-- Per-agent limit: 20,000 tokens/day
-- Estimated cost: ~$1-2 per simulated day with GPT-4
+- Daily budget: 1,000,000 tokens (configurable)
+- Per-agent limit: 200,000 tokens/day
+- Estimated cost: ~$5 per simulated day with GPT-5
 
 ### Grafana Dashboard
 Access at http://localhost:3000 (admin/admin)

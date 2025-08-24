@@ -65,8 +65,8 @@ class SimulationConfig(BaseSettings):
 
 class RateLimitConfig(BaseSettings):
     """Token budget and rate limiting"""
-    daily_token_budget: int = Field(default=100000, env="DAILY_TOKEN_BUDGET")
-    per_agent_token_limit: int = Field(default=20000, env="PER_AGENT_TOKEN_LIMIT")
+    daily_token_budget: int = Field(default=1000000, env="DAILY_TOKEN_BUDGET")
+    per_agent_token_limit: int = Field(default=200000, env="PER_AGENT_TOKEN_LIMIT")
     max_conversation_turns: int = Field(default=5, env="MAX_CONVERSATION_TURNS")
     
     class Config:

@@ -4,8 +4,7 @@ Rate limiting and token budget management for cost control.
 
 from typing import Dict, Optional, Any
 from datetime import datetime, date
-import json
-from pathlib import Path
+import json 
 
 from src.config.settings import settings
 
@@ -207,10 +206,10 @@ class CostOptimizer:
     
     def __init__(self):
         self.model_costs = {
-            "claude-3-haiku": 0.00025,      # per 1k tokens
-            "claude-3-sonnet": 0.003,        # per 1k tokens
-            "llama-3-8b": 0.0001,           # per 1k tokens
-            "gpt-3.5-turbo": 0.0005         # per 1k tokens
+            "gpt-4o": 0.0025,           # $2.50 per 1M input tokens = $0.0025 per 1k tokens
+            "gpt-4o-mini": 0.00015,     # $0.15 per 1M input tokens = $0.00015 per 1k tokens  
+            "gpt-5": 0.005,             # Estimated (2x GPT-4o cost for more advanced model)
+            "gpt-3.5-turbo": 0.0005     # Legacy model for comparison
         }
         
         self.action_priorities = {
@@ -245,19 +244,26 @@ class CostOptimizer:
         """Select appropriate model based on action and budget"""
         priority = self.action_priorities.get(action, 2)
         
-        # High priority actions get better models
+        # High priority actions get GPT-5
         if priority >= 4:
-            return "claude-3-sonnet" if budget_remaining > 0.5 else "claude-3-haiku"
+            return "gpt-5" if budget_remaining > 0.2 else "gpt-4o"
         
-        # Low priority actions use cheap models
+        # Low priority actions - still use GPT-5 if plenty of budget
         if priority <= 2:
-            return "llama-3-8b"
+            if budget_remaining > 0.8:
+                return "gpt-5"  # Use GPT-5 when we have plenty of budget
+            elif budget_remaining > 0.4:
+                return "gpt-4o"
+            else:
+                return "gpt-4o-mini"
         
-        # Medium priority based on budget
-        if budget_remaining > 0.7:
-            return "claude-3-haiku"
+        # Medium priority - prefer GPT-5 when possible
+        if budget_remaining > 0.6:
+            return "gpt-5"
+        elif budget_remaining > 0.3:
+            return "gpt-4o"
         else:
-            return "llama-3-8b"
+            return "gpt-4o-mini"
     
     def estimate_cost(self, tokens: int, model: str) -> float:
         """Estimate cost for token usage"""

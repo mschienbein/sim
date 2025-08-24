@@ -26,7 +26,7 @@ setup:
 # Start services
 up:
 	@echo "Starting services..."
-	docker-compose up -d
+	docker compose up -d
 	@echo "Services started!"
 	@echo "Neo4j Browser: http://localhost:7474"
 	@echo "Grafana: http://localhost:3000 (admin/admin)"
@@ -36,22 +36,22 @@ up:
 # Stop services
 down:
 	@echo "Stopping services..."
-	docker-compose down
+	docker compose down
 	@echo "Services stopped!"
 
 # Restart services
 restart:
 	@echo "Restarting services..."
-	docker-compose restart
+	docker compose restart
 	@echo "Services restarted!"
 
 # View logs
 logs:
-	docker-compose logs -f --tail=100
+	docker compose logs -f --tail=100
 
 # Neo4j specific commands
 neo4j:
-	docker-compose logs -f neo4j --tail=100
+	docker compose logs -f neo4j --tail=100
 
 neo4j-shell:
 	docker exec -it sim-neo4j cypher-shell -u neo4j -p simulation123
@@ -59,12 +59,13 @@ neo4j-shell:
 neo4j-backup:
 	@echo "Backing up Neo4j database..."
 	@mkdir -p backups
-	docker exec sim-neo4j neo4j-admin dump --database=simulation --to=/data/backup-$$(date +%Y%m%d-%H%M%S).dump
+	docker exec sim-neo4j neo4j-admin database dump --database=simulation --to-path=/data/
+	docker cp sim-neo4j:/data/simulation.dump ./backups/simulation-$$(date +%Y%m%d-%H%M%S).dump
 	@echo "Backup complete!"
 
 # Redis commands
 redis:
-	docker-compose logs -f redis --tail=100
+	docker compose logs -f redis --tail=100
 
 redis-cli:
 	docker exec -it sim-redis redis-cli
@@ -83,7 +84,7 @@ clean:
 	@read -p "Are you sure? [y/N] " -n 1 -r; \
 	echo; \
 	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
-		docker-compose down -v; \
+		docker compose down -v; \
 		rm -rf neo4j_data grafana_data prometheus_data redis_data; \
 		echo "Cleanup complete!"; \
 	else \
@@ -94,7 +95,7 @@ clean:
 status:
 	@echo "Service Status:"
 	@echo "==============="
-	@docker-compose ps
+	@docker compose ps
 	@echo ""
 	@echo "Port Availability:"
 	@echo "=================="
