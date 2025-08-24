@@ -12,7 +12,6 @@ from enum import Enum
 
 from neo4j import AsyncGraphDatabase
 from sentence_transformers import SentenceTransformer
-import asyncio
 
 from src.config.settings import settings
 
@@ -25,6 +24,198 @@ class MemoryType(Enum):
     LEARNED = "learned"
     RUMOR = "rumor"
     FACT = "fact"
+    DREAM = "dream"
+    GOSSIP = "gossip"
+    SECRET = "secret"
+    PROPHECY = "prophecy"
+    STORY = "story"
+
+class NodeType(Enum):
+    """Types of nodes in the knowledge graph"""
+    # Core Entities
+    AGENT = "Agent"
+    LOCATION = "Location"
+    BUILDING = "Building"
+    
+    # Items & Objects
+    ITEM = "Item"
+    TOOL = "Tool"
+    FOOD = "Food"
+    BOOK = "Book"
+    SCROLL = "Scroll"
+    ARTIFACT = "Artifact"
+    CURRENCY = "Currency"
+    
+    # Knowledge & Information
+    MEMORY = "Memory"
+    FACT = "Fact"
+    RUMOR = "Rumor"
+    SECRET = "Secret"
+    RECIPE = "Recipe"
+    STORY = "Story"
+    PROPHECY = "Prophecy"
+    LAW = "Law"
+    
+    # Social Structures
+    COMMUNITY = "Community"
+    GUILD = "Guild"
+    FAMILY = "Family"
+    FACTION = "Faction"
+    RELATIONSHIP = "Relationship"
+    
+    # Skills & Abilities
+    SKILL = "Skill"
+    TALENT = "Talent"
+    PROFESSION = "Profession"
+    TITLE = "Title"
+    
+    # Economic & Trade
+    CONTRACT = "Contract"
+    SERVICE = "Service"
+    QUEST = "Quest"
+    DEBT = "Debt"
+    SHOP = "Shop"
+    MARKET = "Market"
+    
+    # Events & Activities
+    EVENT = "Event"
+    FESTIVAL = "Festival"
+    RITUAL = "Ritual"
+    MEETING = "Meeting"
+    CONFLICT = "Conflict"
+    ACHIEVEMENT = "Achievement"
+    
+    # Environmental
+    WEATHER = "Weather"
+    SEASON = "Season"
+    RESOURCE = "Resource"
+    LANDMARK = "Landmark"
+    
+    # Emotional & Mental States
+    EMOTION = "Emotion"
+    MOOD = "Mood"
+    DREAM = "Dream"
+    FEAR = "Fear"
+    DESIRE = "Desire"
+    BELIEF = "Belief"
+    
+    # Health & Status
+    ILLNESS = "Illness"
+    INJURY = "Injury"
+    BLESSING = "Blessing"
+    CURSE = "Curse"
+    STATUS = "Status"
+    
+    # Communication
+    MESSAGE = "Message"
+    ANNOUNCEMENT = "Announcement"
+    GOSSIP = "Gossip"
+    LETTER = "Letter"
+    SONG = "Song"
+    POEM = "Poem"
+    
+    # Relationships & Connections
+    TRUST = "Trust"
+    FRIENDSHIP = "Friendship"
+    ROMANCE = "Romance"
+    RIVALRY = "Rivalry"
+    MENTORSHIP = "Mentorship"
+    ALLIANCE = "Alliance"
+    TRADE = "Trade"
+    EMPLOYMENT = "Employment"
+
+class EdgeType(Enum):
+    """Types of edges/relationships in the knowledge graph"""
+    # Social Interactions
+    SPOKE_WITH = "SPOKE_WITH"
+    OBSERVED = "OBSERVED"
+    GREETED = "GREETED"
+    ARGUED_WITH = "ARGUED_WITH"
+    HELPED = "HELPED"
+    TAUGHT = "TAUGHT"
+    COLLABORATED_WITH = "COLLABORATED_WITH"
+    
+    # Emotional Relationships
+    LIKES = "LIKES"
+    DISLIKES = "DISLIKES"
+    LOVES = "LOVES"
+    FEARS = "FEARS"
+    ADMIRES = "ADMIRES"
+    ENVIES = "ENVIES"
+    RESPECTS = "RESPECTS"
+    FEELS_SORRY_FOR = "FEELS_SORRY_FOR"
+    
+    # Trust & Social Standing
+    TRUSTS = "TRUSTS"
+    DISTRUSTS = "DISTRUSTS"
+    BETRAYED = "BETRAYED"
+    FORGAVE = "FORGAVE"
+    ALLIED_WITH = "ALLIED_WITH"
+    RIVALS_WITH = "RIVALS_WITH"
+    
+    # Memory & Knowledge
+    REMEMBERS = "REMEMBERS"
+    LEARNED_FROM = "LEARNED_FROM"
+    FORGOT = "FORGOT"
+    REMINDS_OF = "REMINDS_OF"
+    CONTRADICTS = "CONTRADICTS"
+    
+    # Economic & Trade
+    OWES = "OWES"
+    TRADED = "TRADED"
+    GIFTED = "GIFTED"
+    STOLE_FROM = "STOLE_FROM"
+    EMPLOYED_BY = "EMPLOYED_BY"
+    COMMISSIONED = "COMMISSIONED"
+    
+    # Activities & Actions
+    AT_LOCATION = "AT_LOCATION"
+    TRAVELED_TO = "TRAVELED_TO"
+    AVOIDED = "AVOIDED"
+    VISITED = "VISITED"
+    PERFORMED_FOR = "PERFORMED_FOR"
+    COMPETED_WITH = "COMPETED_WITH"
+    
+    # Information & Communication
+    WROTE = "WROTE"
+    READ = "READ"
+    HEARD_FROM = "HEARD_FROM"
+    GOSSIPED_ABOUT = "GOSSIPED_ABOUT"
+    SHARED_SECRET = "SHARED_SECRET"
+    LIED_TO = "LIED_TO"
+    
+    # Beliefs & Opinions
+    BELIEVES = "BELIEVES"
+    DOUBTS = "DOUBTS"
+    AGREES_WITH = "AGREES_WITH"
+    DISAGREES_WITH = "DISAGREES_WITH"
+    RUMOR_OF = "RUMOR_OF"
+    
+    # Skills & Development
+    KNOWS_SKILL = "KNOWS_SKILL"
+    MENTORED_BY = "MENTORED_BY"
+    INSPIRED_BY = "INSPIRED_BY"
+    LEARNED_RECIPE = "LEARNED_RECIPE"
+    
+    # Community & Groups
+    PART_OF = "PART_OF"
+    LEADS = "LEADS"
+    FOLLOWS = "FOLLOWS"
+    BANISHED_FROM = "BANISHED_FROM"
+    WELCOMED_BY = "WELCOMED_BY"
+    
+    # Conflicts & Resolutions
+    FOUGHT_WITH = "FOUGHT_WITH"
+    MADE_PEACE_WITH = "MADE_PEACE_WITH"
+    CHALLENGED = "CHALLENGED"
+    DEFENDED = "DEFENDED"
+    
+    # Life Events
+    WITNESSED = "WITNESSED"
+    CELEBRATED_WITH = "CELEBRATED_WITH"
+    MOURNED_WITH = "MOURNED_WITH"
+    BLESSED_BY = "BLESSED_BY"
+    CURSED_BY = "CURSED_BY"
 
 @dataclass
 class Memory:

@@ -2,10 +2,9 @@
 Manages agent-to-agent conversations using Strands A2A protocol.
 """
 
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any
 import asyncio
 from datetime import datetime
-import json
 
 from strands.multiagent.a2a import A2AServer, A2AClientToolProvider
 

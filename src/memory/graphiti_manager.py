@@ -3,12 +3,10 @@ Graphiti-based memory management with temporal knowledge graphs.
 Using Graphiti framework with Neo4j for real-time, incremental memory updates.
 """
 
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
-import asyncio
 import uuid
 import json
-from enum import Enum
 import logging
 
 logger = logging.getLogger(__name__)
@@ -62,15 +60,97 @@ class GraphitiMemoryManager:
         """Register custom node and edge types for the simulation"""
         # Custom node types for our simulation
         node_types = [
-            "Agent",       # Simulation agents
-            "Location",    # Places in the world
-            "Item",        # Tradeable items, books, scrolls
-            "Memory",      # Event snippets
-            "Fact",        # Verified knowledge
-            "Rumor",       # Unverified claims with confidence
-            "Community",   # Social groups/topics
-            "Skill",       # Learned abilities
-            "Contract"     # Trade agreements, IOUs
+            # Core Entities
+            "Agent",           # Simulation agents with personalities
+            "Location",        # Places in the world (market, temple, etc.)
+            "Building",        # Specific structures (houses, shops, library)
+            
+            # Items & Objects
+            "Item",            # Physical objects that can be owned/traded
+            "Tool",            # Items with specific uses (hammer, quill, etc.)
+            "Food",            # Consumable items for energy
+            "Book",            # Written works that contain knowledge
+            "Scroll",          # Written messages or knowledge artifacts
+            "Artifact",        # Special/magical items with unique properties
+            "Currency",        # Money or tokens of value
+            
+            # Knowledge & Information
+            "Memory",          # Event snippets and experiences
+            "Fact",            # Verified knowledge
+            "Rumor",           # Unverified claims with confidence scores
+            "Secret",          # Hidden knowledge known to few
+            "Recipe",          # Instructions for creating/doing something
+            "Story",           # Narratives and tales
+            "Prophecy",        # Future predictions or warnings
+            "Law",             # Rules and regulations
+            
+            # Social Structures
+            "Community",       # Social groups/topics
+            "Guild",           # Professional organizations
+            "Family",          # Family units and lineages
+            "Faction",         # Political or ideological groups
+            "Relationship",    # Explicit relationship records
+            
+            # Skills & Abilities
+            "Skill",           # Learned abilities (cooking, smithing, etc.)
+            "Talent",          # Natural aptitudes
+            "Profession",      # Job roles and careers
+            "Title",           # Earned or bestowed honors
+            
+            # Economic & Trade
+            "Contract",        # Trade agreements, IOUs
+            "Service",         # Services that can be provided
+            "Quest",           # Tasks or missions to complete
+            "Debt",            # Money owed between parties
+            "Shop",            # Commercial establishments
+            "Market",          # Trading venues
+            
+            # Events & Activities
+            "Event",           # Significant occurrences
+            "Festival",        # Celebrations and gatherings
+            "Ritual",          # Religious or cultural ceremonies
+            "Meeting",         # Planned gatherings
+            "Conflict",        # Disputes and fights
+            "Achievement",     # Accomplishments and milestones
+            
+            # Environmental
+            "Weather",         # Weather conditions and patterns
+            "Season",          # Time periods (spring, harvest, etc.)
+            "Resource",        # Natural resources (wood, stone, water)
+            "Landmark",        # Notable geographic features
+            
+            # Emotional & Mental States
+            "Emotion",         # Emotional states and feelings
+            "Mood",            # Longer-term emotional conditions
+            "Dream",           # Dreams and visions
+            "Fear",            # Specific fears and phobias
+            "Desire",          # Wants and goals
+            "Belief",          # Core beliefs and values
+            
+            # Health & Status
+            "Illness",         # Diseases and ailments
+            "Injury",          # Physical wounds
+            "Blessing",        # Positive supernatural effects
+            "Curse",           # Negative supernatural effects
+            "Status",          # Social standing and reputation
+            
+            # Communication
+            "Message",         # Communications between agents
+            "Announcement",    # Public declarations
+            "Gossip",          # Informal information spreading
+            "Letter",          # Written correspondence
+            "Song",            # Musical compositions
+            "Poem",            # Poetic works
+            
+            # Relationships & Connections (for edge consistency)
+            "Trust",           # Trust relationships
+            "Friendship",      # Friend connections
+            "Romance",         # Romantic relationships
+            "Rivalry",         # Competitive relationships
+            "Mentorship",      # Teaching relationships
+            "Alliance",        # Cooperative bonds
+            "Trade",           # Commercial relationships
+            "Employment"       # Work relationships
         ]
         
         # Custom edge types with temporal + weight attributes

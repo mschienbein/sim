@@ -2,10 +2,8 @@
 Sage agent with special web search capabilities.
 """
 
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Any
 from datetime import datetime, date
-import asyncio
-import json
 
 from strands import tool
 from strands.models.openai import OpenAIModel
