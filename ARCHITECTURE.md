@@ -2,31 +2,73 @@
 
 ## Executive Summary
 
-A multi-agent simulation framework where autonomous LLM-powered agents develop distinct personalities through social interactions, memory formation, and limited knowledge propagation in a bounded virtual world. Built on AWS Bedrock AgentCore with Strands SDK for orchestration, Neo4j/Graphiti for temporal memory graphs, and sophisticated personality modeling inspired by Stanford's Smallville research.
+A multi-agent simulation framework where autonomous LLM-powered agents develop distinct personalities through social interactions, memory formation, and limited knowledge propagation in a bounded virtual world. The system leverages cutting-edge technologies to create a living ecosystem of AI agents that exhibit emergent behaviors, form relationships, and evolve unique personalities over time.
+
+### Key Technologies
+- **Strands Agents SDK**: Model-driven agent framework with native OpenAI GPT-5 integration
+- **Strands A2A Protocol**: Agent-to-agent communication enabling autonomous conversations
+- **Neo4j + Graphiti**: Real-time temporal knowledge graphs with bi-temporal tracking
+- **OpenAI GPT-5**: Primary LLM provider for agent cognition and decision-making
+- **Python 3.10+**: Modern async/await patterns for concurrent agent processing
 
 ## 1. Core Architecture Components
 
 ### 1.1 Foundation Technologies
 
-- **AWS Bedrock AgentCore Runtime** (Preview 2025)
-  - Framework-agnostic deployment platform
-  - Supports 8-hour long-running agent tasks
-  - Complete session isolation with OAuth/Cognito/IAM
-  - Native CloudWatch and OpenTelemetry observability
-  - Free tier until September 2025
+#### Strands Agents SDK (v1.0+)
+The core agent framework providing model-driven development with minimal boilerplate. Strands takes a revolutionary approach where the LLM itself drives agent behavior rather than complex orchestration logic.
 
-- **Strands Agents SDK** (v1.0+)
-  - Model-driven agent development framework
-  - Agent-to-Agent (A2A) protocol for multi-agent communication
-  - Tool interoperability with MCP protocol
-  - Reduces development time from months to days
+**Key Features:**
+- **Model-First Design**: The LLM is the brain - all decisions flow through it
+- **Native OpenAI Integration**: First-class support for GPT-5, GPT-3.5-turbo
+- **Tool Ecosystem**: Decorators make any Python function an agent tool
+- **A2A Protocol**: Agents can call each other as tools for complex interactions
+- **Streaming Support**: Real-time token streaming for responsive agents
+- **Type Safety**: Pydantic models for structured inputs/outputs
 
-- **Neo4j with Graphiti Framework**
-  - Real-time temporal knowledge graph (300ms P95 latency)
-  - Bi-temporal model tracking event and ingestion times
-  - Hybrid search: embeddings + BM25 + graph traversal
-  - Automatic ontology creation with Pydantic models
-  - Outperforms MemGPT on DMR benchmark (94.8% vs 93.4%)
+**Configuration Example:**
+```python
+from strands import Agent
+from strands.models.openai import OpenAIModel
+
+model = OpenAIModel(
+    client_args={"api_key": "sk-..."},
+    model_id="gpt-5",
+    params={"temperature": 0.7, "max_tokens": 500}
+)
+agent = Agent(name="John", model=model, tools=[...])
+```
+
+#### Neo4j with Graphiti Framework
+A revolutionary temporal knowledge graph system designed specifically for AI agent memory. Unlike traditional databases, Graphiti provides real-time, incremental updates without batch processing.
+
+**Core Capabilities:**
+- **Bi-Temporal Tracking**: Records both when events happened and when they were learned
+- **Real-time Updates**: 300ms P95 latency for memory operations
+- **Hybrid Search**: Combines semantic embeddings, BM25 text search, and graph traversal
+- **Automatic Ontology**: Learns structure from data without predefined schemas
+- **Memory Compression**: Reflection and summarization to manage growth
+- **Proven Performance**: Outperforms MemGPT (94.8% vs 93.4% on DMR benchmark)
+
+**Memory Operations:**
+- **Ingestion**: Episodes, conversations, observations stored as temporal nodes
+- **Retrieval**: Context-aware search considering time, relevance, and relationships
+- **Reflection**: Periodic compression of memories into higher-level insights
+- **Propagation**: Knowledge flows through relationship edges
+
+#### OpenAI GPT-5 Integration
+Primary LLM provider powering agent cognition, selected for its superior reasoning capabilities and extensive world knowledge.
+
+**Model Selection:**
+- **Regular Agents**: GPT-5 (balanced cost/performance)
+- **Sage Agent**: GPT-5 with lower temperature (0.5) for accuracy
+- **Fallback**: GPT-3.5-turbo for non-critical operations
+
+**Token Management:**
+- Automatic token counting for cost tracking
+- Per-agent and daily budget limits
+- Smart truncation for long contexts
+- Response caching to reduce redundant calls
 
 ### 1.2 System Layers
 
@@ -54,19 +96,36 @@ A multi-agent simulation framework where autonomous LLM-powered agents develop d
 
 ## 2. Agent Design & Personality System
 
+The personality system is the heart of what makes each agent unique. Rather than scripted behaviors, agents develop genuine personalities through the interplay of base traits, emotional states, and accumulated experiences.
+
 ### 2.1 Core Personality Traits (Big Five Model)
 
-Each agent has base personality encoded in system prompt:
+The Big Five personality model from psychology provides a scientifically-grounded framework for agent personalities. Each trait influences decision-making, dialogue style, and relationship formation.
 
 ```python
 personality_traits = {
-    "openness": 0.0-1.0,          # Curiosity, creativity
-    "conscientiousness": 0.0-1.0,  # Organization, discipline
-    "extraversion": 0.0-1.0,       # Social energy, assertiveness
-    "agreeableness": 0.0-1.0,      # Cooperation, trust
-    "neuroticism": 0.0-1.0         # Emotional stability (inverse)
+    "openness": 0.0-1.0,          # Curiosity, creativity, imagination
+    "conscientiousness": 0.0-1.0,  # Organization, discipline, reliability
+    "extraversion": 0.0-1.0,       # Social energy, assertiveness, talkativeness
+    "agreeableness": 0.0-1.0,      # Cooperation, trust, empathy
+    "neuroticism": 0.0-1.0         # Emotional volatility, stress sensitivity
 }
 ```
+
+**Trait Influences:**
+- **Openness**: High = seeks new experiences, asks questions, explores. Low = prefers routine, skeptical of change
+- **Conscientiousness**: High = completes tasks, keeps promises. Low = spontaneous, flexible
+- **Extraversion**: High = initiates conversations, seeks crowds. Low = prefers solitude, deeper connections
+- **Agreeableness**: High = helpful, trusting, cooperative. Low = competitive, skeptical
+- **Neuroticism**: High = emotionally reactive, stress-prone. Low = calm, stable
+
+**Derived Traits:**
+Additional personality dimensions calculated from the Big Five:
+- **Curiosity**: Openness × 0.8 + random factor
+- **Creativity**: Openness × 0.7 + conscientiousness × 0.3
+- **Ambition**: Conscientiousness × 0.6 + extraversion × 0.4
+- **Patience**: (1 - neuroticism) × 0.7
+- **Humor**: Extraversion × 0.5 + openness × 0.3
 
 ### 2.2 Dynamic Emotional States
 

@@ -2,7 +2,7 @@
 Rate limiting and token budget management for cost control.
 """
 
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 from datetime import datetime, date
 import json
 from pathlib import Path
@@ -102,7 +102,7 @@ class TokenBudgetManager:
             "percentage": (used / self.per_agent_limit) * 100
         }
     
-    def get_usage_report(self) -> Dict[str, any]:
+    def get_usage_report(self) -> Dict[str, Any]:
         """Get comprehensive usage report"""
         return {
             "daily": {

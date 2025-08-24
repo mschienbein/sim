@@ -2,8 +2,9 @@
 Core configuration and settings management for the simulation.
 """
 
-from typing import Dict, List, Optional
-from pydantic import BaseSettings, Field
+from typing import Dict, List, Optional, Tuple, Any
+from pydantic_settings import BaseSettings
+from pydantic import Field
 from pathlib import Path
 import os
 from dotenv import load_dotenv
@@ -11,11 +12,20 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-class AWSConfig(BaseSettings):
-    """AWS and Bedrock configuration"""
-    region: str = Field(default="us-east-1", env="AWS_REGION")
-    access_key_id: Optional[str] = Field(default=None, env="AWS_ACCESS_KEY_ID")
-    secret_access_key: Optional[str] = Field(default=None, env="AWS_SECRET_ACCESS_KEY")
+class LLMConfig(BaseSettings):
+    """LLM Provider configuration"""
+    provider: str = Field(default="openai", env="LLM_PROVIDER")
+    
+    # OpenAI settings
+    openai_api_key: Optional[str] = Field(default=None, env="OPENAI_API_KEY")
+    openai_model_id: str = Field(default="gpt-5", env="OPENAI_MODEL_ID")
+    openai_sage_model_id: str = Field(default="gpt-5", env="OPENAI_SAGE_MODEL_ID")
+    openai_embedding_model: str = Field(default="text-embedding-3-small", env="OPENAI_EMBEDDING_MODEL")
+    
+    # AWS/Bedrock settings (backup)
+    aws_region: str = Field(default="us-east-1", env="AWS_REGION")
+    aws_access_key_id: Optional[str] = Field(default=None, env="AWS_ACCESS_KEY_ID")
+    aws_secret_access_key: Optional[str] = Field(default=None, env="AWS_SECRET_ACCESS_KEY")
     bedrock_region: str = Field(default="us-east-1", env="BEDROCK_REGION")
     bedrock_model_id: str = Field(
         default="anthropic.claude-3-haiku-20240307",
@@ -223,12 +233,18 @@ class WorldConfig(BaseSettings):
 class Settings:
     """Main settings aggregator"""
     def __init__(self):
-        self.aws = AWSConfig()
+        self.llm = LLMConfig()
         self.neo4j = Neo4jConfig()
         self.simulation = SimulationConfig()
         self.rate_limit = RateLimitConfig()
         self.personality = PersonalityConfig()
         self.world = WorldConfig()
+        
+        # Add sage-specific config
+        self.SAGE_SEARCH_LIMIT_PER_DAY = int(os.getenv("SAGE_SEARCH_LIMIT_PER_DAY", "1"))
+        
+        # Backward compatibility
+        self.aws = self.llm  # For backward compatibility
         
         # Paths
         self.project_root = Path(__file__).parent.parent.parent

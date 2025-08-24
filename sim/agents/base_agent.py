@@ -7,10 +7,9 @@ from dataclasses import dataclass, field
 import asyncio
 import json
 from datetime import datetime
-import uuid
 
 from strands import Agent, tool
-from strands.multiagent.a2a import A2AServer, A2AClientToolProvider
+from strands.models.openai import OpenAIModel
 
 from .personality import (
     Personality, EmotionalProfile, SocialProfile,
@@ -125,14 +124,29 @@ class SimulationAgent(Agent):
         initial_location: Tuple[int, int],
         memory_manager: MemoryManager,
         backstory: str = "",
-        archetype: Optional[str] = None
+        archetype: Optional[str] = None,
+        model: Optional[OpenAIModel] = None
     ):
         # Build system prompt from personality and role
         system_prompt = self._build_system_prompt(name, role, personality, backstory)
         
+        # Create OpenAI model if not provided
+        if model is None:
+            model = OpenAIModel(
+                client_args={
+                    "api_key": settings.llm.openai_api_key,
+                },
+                model_id=settings.llm.openai_model_id,
+                params={
+                    "max_tokens": 500,
+                    "temperature": 0.7,
+                }
+            )
+        
         # Initialize Strands Agent
         super().__init__(
             name=name,
+            model=model,
             system_prompt=system_prompt,
             tools=self._get_tools()
         )

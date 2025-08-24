@@ -8,11 +8,12 @@ import asyncio
 import json
 
 from strands import tool
-import boto3
+from strands.models.openai import OpenAIModel
 
 from .base_agent import SimulationAgent
 from ..memory.manager import MemoryManager
 from .personality import Personality
+from ..config.settings import settings
 
 class SageAgent(SimulationAgent):
     """Special agent with web search capabilities"""
@@ -45,6 +46,18 @@ class SageAgent(SimulationAgent):
         is limited and must be used wisely. You share knowledge freely with those who seek it, 
         believing that wisdom should flow like water through the village."""
         
+        # Create a better model for the sage
+        sage_model = OpenAIModel(
+            client_args={
+                "api_key": settings.llm.openai_api_key,
+            },
+            model_id=settings.llm.openai_sage_model_id,
+            params={
+                "max_tokens": 1000,
+                "temperature": 0.5,  # More focused for sage
+            }
+        )
+        
         super().__init__(
             agent_id=agent_id,
             name=name,
@@ -53,7 +66,8 @@ class SageAgent(SimulationAgent):
             initial_location=initial_location,
             memory_manager=memory_manager,
             backstory=backstory,
-            archetype="sage"
+            archetype="sage",
+            model=sage_model
         )
         
         # Web search tracking

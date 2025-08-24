@@ -571,11 +571,16 @@ class SimulationEngine:
         
         print(f"\n🧠 Knowledge & Memory:")
         for agent_id, agent in self.agents.items():
-            summary = await self.memory_manager.get_agent_summary(agent_id)
+            # Get memory count for agent
+            recent_memories = await self.memory_manager.search_temporal(
+                query="all events",
+                agent_id=agent_id,
+                limit=100
+            )
             print(f"  {agent.name} ({agent.role}):")
-            print(f"    Memories: {summary['memory_count']}")
-            print(f"    Knowledge: {summary['knowledge_count']}")
-            print(f"    Relationships: {summary['relationship_count']}")
+            print(f"    Memories: {len(recent_memories)}")
+            print(f"    Relationships: {len(agent.social.relationships)}")
+            print(f"    Energy: {agent.stats.energy:.1f}")
         
         print(f"\n💰 Token Usage:")
         print(f"  Total tokens: {self.metrics['tokens_used']}")

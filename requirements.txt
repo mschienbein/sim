@@ -1,19 +1,20 @@
-# Core dependencies
-strands-agents>=1.0.0
-bedrock-agentcore>=0.1.0
-boto3>=1.28.0
+# Core dependencies - Strands with OpenAI support
+strands-agents[openai]>=1.0.0
+strands-agents-tools>=1.0.0
+openai>=1.0.0
 anthropic>=0.25.0
+boto3>=1.28.0
 
 # Graphiti and Neo4j
-graphiti-core>=0.1.0
+graphiti-core>=0.3.0
 neo4j>=5.0.0
 sentence-transformers>=2.2.0
 
 # Framework and utilities
 pydantic>=2.0.0
+pydantic-settings>=2.0.0
 python-dotenv>=1.0.0
 numpy>=1.24.0
-asyncio>=3.4.3
 
 # CLI and display
 typer>=0.9.0

@@ -351,7 +351,7 @@ def config():
         ("Per Agent Token Limit", f"{settings.rate_limit.per_agent_token_limit:,}"),
         ("Sage Search Limit", f"{settings.SAGE_SEARCH_LIMIT_PER_DAY}/day"),
         ("Neo4j URI", settings.neo4j.uri),
-        ("Bedrock Model", settings.aws.bedrock_model_id),
+        ("OpenAI Model", settings.llm.openai_model_id),
     ]
     
     for name, value in config_items:

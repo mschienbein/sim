@@ -8,7 +8,6 @@ from datetime import datetime
 import json
 
 from strands.multiagent.a2a import A2AServer, A2AClientToolProvider
-from strands import Agent
 
 from ..agents.base_agent import SimulationAgent
 from ..config.settings import settings
