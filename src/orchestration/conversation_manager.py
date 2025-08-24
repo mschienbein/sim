@@ -9,8 +9,8 @@ import json
 
 from strands.multiagent.a2a import A2AServer, A2AClientToolProvider
 
-from ..agents.base_agent import SimulationAgent
-from ..config.settings import settings
+from src.agents.base_agent import SimulationAgent
+from src.config.settings import settings
 
 class ConversationManager:
     """

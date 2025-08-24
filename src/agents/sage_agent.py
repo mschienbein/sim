@@ -10,10 +10,10 @@ import json
 from strands import tool
 from strands.models.openai import OpenAIModel
 
-from .base_agent import SimulationAgent
-from ..memory.manager import MemoryManager
-from .personality import Personality
-from ..config.settings import settings
+from src.agents.base_agent import SimulationAgent
+from src.memory.manager import MemoryManager
+from src.agents.personality import Personality
+from src.config.settings import settings
 
 class SageAgent(SimulationAgent):
     """Special agent with web search capabilities"""

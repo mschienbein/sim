@@ -37,8 +37,8 @@ dev = [
 ]
 
 [project.scripts]
-sim = "sim.main:app"
-sim-server = "sim.server:main"
+sim = "src.main:app"
+sim-server = "src.server:main"
 
 [build-system]
 requires = ["setuptools>=68.0.0", "wheel"]

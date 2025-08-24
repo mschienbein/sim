@@ -1,0 +1,117 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Documentation
+README.md
+ARCHITECTURE.md
+docs/
+*.md
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.mypy_cache/
+.hypothesis/
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs and data
+logs/
+*.log
+data/
+checkpoints/
+*.checkpoint
+
+# Environment files (should be passed via docker-compose or secrets)
+.env
+.env.*
+.env.docker
+env.docker
+*.env
+
+# Tests
+tests/
+test_*.py
+*_test.py
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Node (if any frontend)
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Jupyter
+notebooks/
+*.ipynb
+.ipynb_checkpoints/
+
+# Database dumps
+*.sql
+*.dump
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Neo4j local data (use volumes instead)
+neo4j-data/
+neo4j_data/
+neo4j_logs/
+neo4j_import/
+neo4j_plugins/
+
+# Monitoring data (use volumes)
+grafana_data/
+prometheus_data/
+redis_data/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+
+# Coverage
+.coverage
+coverage.xml
+*.cover
+
+# Package manager files
+pip-log.txt
+pip-delete-this-directory.txt

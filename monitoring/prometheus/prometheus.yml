@@ -1,0 +1,54 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'sim-monitor'
+
+scrape_configs:
+  # Neo4j metrics
+  - job_name: 'neo4j'
+    static_configs:
+      - targets: ['neo4j:2004']
+        labels:
+          service: 'neo4j'
+          environment: 'simulation'
+
+  # Neo4j Exporter metrics
+  - job_name: 'neo4j-exporter'
+    static_configs:
+      - targets: ['neo4j-exporter:9187']
+        labels:
+          service: 'neo4j-exporter'
+          environment: 'simulation'
+
+  # Node Exporter (system metrics)
+  - job_name: 'node'
+    static_configs:
+      - targets: ['node-exporter:9100']
+        labels:
+          service: 'node-exporter'
+          environment: 'simulation'
+
+  # Redis metrics (if using redis_exporter)
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:6379']
+        labels:
+          service: 'redis'
+          environment: 'simulation'
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          service: 'prometheus'
+          environment: 'simulation'
+
+  # Grafana metrics
+  - job_name: 'grafana'
+    static_configs:
+      - targets: ['grafana:3000']
+        labels:
+          service: 'grafana'
+          environment: 'simulation'

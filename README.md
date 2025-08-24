@@ -1,38 +1,78 @@
 # LLM Agent Simulation Framework
 
-A multi-agent simulation where LLM-driven agents develop distinct personalities through interactions, memory formation, and knowledge propagation in a bounded world.
+A sophisticated multi-agent simulation where AI agents develop distinct personalities through interactions, form memories using a temporal knowledge graph, and evolve their behaviors over time.
 
-## Core Concepts
+## 🌟 Features
 
-- **Autonomous Agents**: Each agent is powered by an LLM (OpenAI GPT-5) with unique personality traits and stats
-- **Memory System**: Neo4j + Graphiti temporal knowledge graph stores experiences, relationships, and learned information
-- **Limited Information**: One "sage" agent has web search (once daily) - knowledge must propagate through conversation
-- **Emergent Personalities**: Agents evolve based on interactions, developing unique characteristics over time
-- **Grid-based World**: Town and landmarks with location-aware interactions
+- **Personality Evolution**: Agents develop unique personalities based on Big Five traits
+- **Temporal Memory**: Neo4j + Graphiti for bi-temporal knowledge graphs
+- **Smart Conversations**: Strands A2A protocol for autonomous agent interactions  
+- **Special Sage Agent**: One agent with limited web search capabilities (1x/day)
+- **Token Management**: Built-in rate limiting to control LLM costs
+- **Rich Monitoring**: Grafana dashboards for real-time simulation metrics
+- **Live Dashboard**: Real-time CLI visualization of agent activities
 
-## Architecture
+## 🏗️ Architecture
 
-- **Strands Agents SDK**: Model-driven agent framework with OpenAI integration
-- **Strands A2A Protocol**: Agent-to-agent communication
-- **Neo4j + Graphiti**: Temporal knowledge graph for real-time memory updates
-- **Rate Limiting**: Token budget management for cost control
+See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed system design.
 
-## Prerequisites
+### Key Components
+- **Agents**: Autonomous entities with personalities, memories, and tools
+- **World Grid**: 10x10 spatial environment with locations and resources
+- **Memory System**: Neo4j graph database with temporal awareness
+- **Orchestration**: Event-driven simulation with conversation management
+- **Monitoring**: Prometheus + Grafana for metrics and visualization
 
+## 🚀 Quick Start with Docker Compose
+
+### Prerequisites
+- Docker and Docker Compose
 - Python 3.10+
-- OpenAI API key
-- Neo4j database (see setup below)
-- 2GB+ RAM for Neo4j
+- Make (for convenience commands)
 
-## Complete Setup Guide
+### Setup
 
-### Step 1: Clone and Install
+1. **Clone the repository**
+```bash
+git clone <repository>
+cd sim
+```
+
+2. **Configure environment**
+```bash
+cp .env.example .env
+# Edit .env with your OpenAI API key
+```
+
+3. **Start services with Docker Compose**
+```bash
+# Initial setup (creates directories, copies env)
+make setup
+
+# Start all services
+make up
+```
+
+This starts:
+- Neo4j (http://localhost:7474) - Graph database
+- Grafana (http://localhost:3000) - Metrics dashboard (admin/admin)
+- Prometheus (http://localhost:9090) - Metrics collection
+- Redis - Caching layer
+- Jupyter (http://localhost:8888) - Analysis notebooks (token: simulation123)
+
+4. **Run the simulation**
+```bash
+# In a separate terminal, with services running
+python -m src.main --agents 5 --days 3
+```
+
+## 🛠️ Alternative Setup (Without Docker)
+
+If you prefer to run services locally:
+
+### Step 1: Install Dependencies
 
 ```bash
-# Clone repository
-git clone <repo-url>
-cd sim
-
 # Create virtual environment
 python3 -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
@@ -41,11 +81,9 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### Step 2: Neo4j Database Setup
+### Step 2: Neo4j Setup
 
-Choose ONE of these options:
-
-#### Option A: Docker (Recommended - Fastest)
+#### Option A: Docker (Just Neo4j)
 
 ```bash
 # Start Neo4j with Docker
@@ -67,18 +105,7 @@ docker logs neo4j-sim
 # Default credentials: neo4j / simulation123
 ```
 
-#### Option B: Docker Compose (Full Stack)
-
-```bash
-# Start Neo4j and optional Grafana monitoring
-docker-compose up -d
-
-# Services:
-# - Neo4j Browser: http://localhost:7474 (neo4j/simulation123)
-# - Grafana: http://localhost:3000 (admin/admin)
-```
-
-#### Option C: Native Installation
+#### Option B: Native Installation
 
 **macOS (Homebrew):**
 ```bash
@@ -91,91 +118,62 @@ neo4j start
 **Windows/Linux:**
 Follow the [official installation guide](https://neo4j.com/docs/operations-manual/current/installation/)
 
-### Step 3: Configure Environment
 
-```bash
-# Copy environment template
-cp .env.example .env
-
-# Edit .env file with your credentials
-nano .env  # or use your preferred editor
-```
-
-Required configuration in `.env`:
-
-```bash
-# LLM Provider
-LLM_PROVIDER=openai
-
-# OpenAI Configuration (REQUIRED)
-OPENAI_API_KEY=sk-your-actual-api-key-here
-OPENAI_MODEL_ID=gpt-5
-OPENAI_SAGE_MODEL_ID=gpt-5
-
-# Neo4j Configuration (REQUIRED)
-NEO4J_URI=bolt://localhost:7687
-NEO4J_USERNAME=neo4j
-NEO4J_PASSWORD=simulation123  # Or your chosen password
-
-# Simulation Settings
-SIMULATION_NAME=smallville_v1
-MAX_AGENTS=5
-MAX_DAYS=10
-
-# Rate Limiting (Important for cost control)
-DAILY_TOKEN_BUDGET=100000
-PER_AGENT_TOKEN_LIMIT=20000
-```
-
-### Step 4: Verify Setup
-
-```bash
-# Test Neo4j connection
-python -c "from neo4j import GraphDatabase; \
-driver = GraphDatabase.driver('bolt://localhost:7687', \
-auth=('neo4j', 'simulation123')); \
-driver.verify_connectivity(); \
-print('✓ Neo4j connected')"
-
-# Test OpenAI
-python -c "from openai import OpenAI; \
-client = OpenAI(); \
-print('✓ OpenAI configured')"
-```
-
-### Step 5: Run Simulation
+### Step 3: Run Simulation
 
 ```bash
 # Basic run
-python -m sim run --agents 5 --days 10
+python -m src.main --agents 5 --days 10
 
-# With debug output
-python -m sim run --agents 5 --days 3 --debug
-
-# View help
-python -m sim --help
+# With monitoring dashboard
+python -m src.main --agents 5 --days 3 --dashboard
 ```
 
-## CLI Commands
+## 📝 Configuration
+
+Edit `.env` file for customization:
+
+```env
+# LLM Configuration
+OPENAI_API_KEY=your-api-key
+OPENAI_MODEL_ID=gpt-4
+OPENAI_SAGE_MODEL_ID=gpt-4
+
+# Simulation Parameters
+MAX_AGENTS=5
+MAX_DAYS=10
+TICKS_PER_DAY=24
+
+# Rate Limiting
+DAILY_TOKEN_BUDGET=100000
+PER_AGENT_TOKEN_LIMIT=20000
+
+# Neo4j (automatically configured by docker-compose)
+NEO4J_URI=bolt://localhost:7687
+NEO4J_USERNAME=neo4j
+NEO4J_PASSWORD=simulation123
+```
+
+## 🛠️ Useful Commands
 
 ```bash
-# Run simulation
-sim run --agents 5 --days 10
+# Service management
+make up          # Start all services
+make down        # Stop all services
+make restart     # Restart services
+make status      # Check service status
+make logs        # View all logs
+make neo4j       # View Neo4j logs
 
-# View world map
-sim world
+# Database
+make neo4j-shell # Access Neo4j cypher shell
+make neo4j-backup # Backup Neo4j data
 
-# Check simulation stats
-sim stats
+# Monitoring
+make monitoring  # Open Grafana dashboard
 
-# View latest checkpoint
-sim view --latest
-
-# Interview an agent
-sim interview Aldric --latest
-
-# Clean logs/checkpoints
-sim clean
+# Cleanup
+make clean       # Remove all data (careful!)
 ```
 
 ## Understanding the Simulation
@@ -208,105 +206,117 @@ Agents use Graphiti's temporal knowledge graph to:
 ### Token Usage
 - Daily budget: 100,000 tokens (configurable)
 - Per-agent limit: 20,000 tokens/day
-- Estimated cost: ~$1-2 per simulated day with GPT-5
+- Estimated cost: ~$1-2 per simulated day with GPT-4
 
-### Check Costs
-```bash
-# View token usage
-sim stats
+### Grafana Dashboard
+Access at http://localhost:3000 (admin/admin)
+- Agent activity metrics
+- Memory formation rates
+- Token usage tracking
+- Conversation statistics
 
-# Monitor in real-time
-tail -f logs/token_usage_*.json
-```
-
-### Neo4j Monitoring
-```bash
-# Check database size
-docker exec neo4j-sim cypher-shell -u neo4j -p simulation123 \
-  "MATCH (n) RETURN count(n) as nodes"
-
-# View recent memories
-docker exec neo4j-sim cypher-shell -u neo4j -p simulation123 \
-  "MATCH (m:Memory) RETURN m.content ORDER BY m.timestamp DESC LIMIT 10"
-```
+### Neo4j Browser
+Access at http://localhost:7474
+- Visualize agent memory graphs
+- Query temporal relationships
+- Explore knowledge networks
 
 ## Troubleshooting
 
 ### Neo4j Connection Issues
 ```bash
 # Check if Neo4j is running
-docker ps | grep neo4j
-# OR
-neo4j status
+make status
 
 # Restart Neo4j
-docker restart neo4j-sim
-# OR
-neo4j restart
+make restart
 
 # Check logs
-docker logs neo4j-sim
+make neo4j
 ```
 
 ### OpenAI API Issues
 - Verify API key is correct in `.env`
 - Check API key has sufficient credits
 - Ensure not hitting rate limits
+- Use GPT-4 instead of GPT-5 if model not available
 
 ### Memory Issues
 - Neo4j requires ~2GB RAM minimum
 - Reduce `MAX_AGENTS` if running out of memory
-- Use `sim clean` to clear old data
+- Use `make clean` to clear old data (careful!)
 
-## Development
+## 🧑‍🔬 Agent Types
 
-### Project Structure
+### Regular Agents
+- Develop personalities through interactions
+- Form memories and relationships
+- Make decisions based on personality traits
+- Engage in autonomous conversations
+
+### Sage Agent
+- Special knowledge-keeper role
+- Limited web search ability (1x/day)
+- Higher initial knowledge level
+- Shares wisdom with other agents
+- Creates knowledge artifacts (scrolls)
+
+## 🔧 Extending the Framework
+
+### Adding New Agent Types
+Create a new class extending `SimulationAgent` in `src/agents/`:
+```python
+from src.agents.base_agent import SimulationAgent
+
+class MerchantAgent(SimulationAgent):
+    def __init__(self, ...):
+        super().__init__(...)
+        # Add custom initialization
+```
+
+### Adding New Tools
+Use the Strands `@tool` decorator:
+```python
+@tool
+async def custom_action(self, parameter: str) -> str:
+    """Tool description"""
+    # Implementation
+    return result
+```
+
+### Adding New Locations
+Edit `src/world/grid.py` to add location types and their properties.
+
+## 📁 Project Structure
+
 ```
 sim/
-├── agents/          # Agent definitions and personalities
-├── world/           # Grid system and locations
-├── memory/          # Graphiti/Neo4j integration
-├── orchestration/   # Simulation engine and A2A protocol
-├── tools/           # Agent capabilities
-└── config/          # Settings and configuration
+├── src/                    # Source code
+│   ├── agents/            # Agent implementations
+│   ├── memory/            # Memory management
+│   ├── world/             # World grid system
+│   ├── orchestration/     # Simulation engine
+│   └── config/            # Configuration
+├── monitoring/            # Grafana dashboards
+├── docker-compose.yml     # Service definitions
+├── Makefile              # Convenience commands
+└── .env                  # Configuration (create from .env.example)
 ```
 
-### Adding New Agents
-1. Define personality in `agents/personality.py`
-2. Create agent config in `orchestration/engine.py`
-3. Add role-specific goals and behaviors
+## 🤝 Contributing
 
-### Extending Memory
-The Graphiti integration in `memory/graphiti_manager.py` handles:
-- Temporal knowledge graphs
-- Bi-temporal event tracking
-- Hybrid search (semantic + graph + full-text)
-- Automatic reflection and compression
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Test with `make status` and run simulation
+5. Submit a pull request
 
-## Stop Services
+## 📄 License
 
-```bash
-# Stop simulation (Ctrl+C during run)
+MIT License - See LICENSE file for details
 
-# Stop Neo4j Docker
-docker stop neo4j-sim
+## 🙏 Acknowledgments
 
-# Stop all Docker Compose services
-docker-compose down
-
-# Clean up data (optional)
-docker volume rm sim_neo4j_data
-rm -rf neo4j-data/
-```
-
-## Project Structure
-
-```
-sim/
-├── agents/          # Agent definitions and personas
-├── world/           # Grid system and locations
-├── memory/          # Neo4j integration and memory management
-├── orchestration/   # Simulation engine and A2A protocol
-├── tools/           # Agent capabilities (search, trade, etc.)
-└── config/          # Configuration and environment settings
-```
+- Built with [Strands Agents SDK](https://github.com/strands-ai/strands)
+- Memory system inspired by Graphiti
+- Simulation concepts from Stanford's Smallville paper

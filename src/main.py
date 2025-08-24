@@ -15,8 +15,8 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 import signal
 import sys
 
-from .orchestration.engine import SimulationEngine
-from .config.settings import settings
+from src.orchestration.engine import SimulationEngine
+from src.config.settings import settings
 
 # Initialize Typer app and Rich console
 app = typer.Typer(
@@ -100,11 +100,181 @@ async def run_simulation(config: dict):
         await engine.initialize()
         progress.update(init_task, completed=True)
     
-    # Run simulation
-    await engine.run_simulation(days=config["max_days"])
+    # Run simulation with live dashboard if not in debug mode
+    if config.get("debug"):
+        # Simple run without live display
+        await engine.run_simulation(days=config["max_days"])
+    else:
+        # Run with live dashboard
+        await run_with_dashboard(engine, config["max_days"])
     
     # Cleanup
     await engine.stop()
+
+async def run_with_dashboard(engine: SimulationEngine, days: int):
+    """Run simulation with live dashboard display"""
+    
+    def make_layout() -> Layout:
+        """Create the dashboard layout"""
+        layout = Layout(name="root")
+        
+        layout.split(
+            Layout(name="header", size=3),
+            Layout(name="main"),
+            Layout(name="footer", size=4)
+        )
+        
+        layout["main"].split_row(
+            Layout(name="left", ratio=2),
+            Layout(name="center"),
+            Layout(name="right")
+        )
+        
+        return layout
+    
+    def generate_dashboard() -> Layout:
+        """Generate dashboard content"""
+        layout = make_layout()
+        
+        # Header
+        layout["header"].update(Panel(
+            f"[bold cyan]🎭 LLM Agent Simulation[/bold cyan] | Day {engine.current_day + 1}/{days} | Tick {engine.current_tick}",
+            border_style="cyan"
+        ))
+        
+        # Agent Status Table
+        agent_table = Table(title="Agent Status", expand=True)
+        agent_table.add_column("Agent", style="cyan")
+        agent_table.add_column("Energy", style="green")
+        agent_table.add_column("Location", style="blue")
+        agent_table.add_column("Action", style="yellow")
+        
+        for agent_id, agent in engine.agents.items():
+            location = engine.world.get_location_by_position(agent.location)
+            location_name = location.name if location else str(agent.location)
+            current_action = agent.current_action or "idle"
+            
+            agent_table.add_row(
+                agent.name,
+                f"{agent.stats.energy:.0f}/100",
+                location_name,
+                current_action
+            )
+        
+        layout["left"].update(Panel(agent_table, title="👥 Agents", border_style="green"))
+        
+        # Mini World Map
+        world_lines = []
+        for y in range(min(10, engine.world.height)):
+            row = ""
+            for x in range(min(10, engine.world.width)):
+                # Check if any agent is at this position
+                agent_here = None
+                for agent_id, agent in engine.agents.items():
+                    if agent.location == (x, y):
+                        agent_here = agent.name[0]  # First letter of name
+                        break
+                
+                if agent_here:
+                    row += f"[bold yellow]{agent_here}[/bold yellow] "
+                else:
+                    loc = engine.world.get_location(x, y)
+                    if loc:
+                        symbol = settings.world.locations.get(loc.location_type.value, {}).get("symbol", ".")
+                        row += f"[dim]{symbol}[/dim] "
+                    else:
+                        row += ". "
+            world_lines.append(row)
+        
+        world_text = "\n".join(world_lines)
+        layout["center"].update(Panel(world_text, title="🗺️ World", border_style="magenta"))
+        
+        # Metrics Panel
+        metrics = engine.metrics
+        metrics_text = (
+            f"[bold]Interactions[/bold]\n"
+            f"Conversations: {metrics.get('total_conversations', 0)}\n"
+            f"Trades: {metrics.get('total_trades', 0)}\n"
+            f"Reflections: {metrics.get('total_reflections', 0)}\n\n"
+            f"[bold]Resources[/bold]\n"
+            f"Tokens Used: {metrics.get('tokens_used', 0):,}\n"
+            f"Est. Cost: ${metrics.get('tokens_used', 0) * 0.00001:.4f}"
+        )
+        
+        layout["right"].update(Panel(metrics_text, title="📊 Metrics", border_style="blue"))
+        
+        # Recent Events in Footer
+        recent_events = []
+        if engine.event_log:
+            for event in engine.event_log[-3:]:  # Last 3 events
+                agent_name = engine.agents[event['agent']].name
+                action = event['action']
+                recent_events.append(f"[dim]{agent_name}[/dim] → {action}")
+        
+        events_text = "\n".join(recent_events) if recent_events else "No recent events"
+        layout["footer"].update(Panel(events_text, title="📝 Recent Activity", border_style="yellow"))
+        
+        return layout
+    
+    # Create live display
+    with Live(generate_dashboard(), refresh_per_second=2, console=console) as live:
+        # Store reference for updates
+        engine.live_display = live
+        
+        # Run simulation
+        original_run = engine.run_simulation
+        
+        async def run_with_updates(days: int):
+            """Wrapper to update display during simulation"""
+            engine.running = True
+            
+            for day in range(days):
+                if not engine.running:
+                    break
+                
+                engine.current_day = day
+                
+                for tick in range(settings.simulation.ticks_per_day):
+                    if not engine.running or engine.paused:
+                        await engine._handle_pause()
+                        if not engine.running:
+                            break
+                    
+                    engine.current_tick = day * settings.simulation.ticks_per_day + tick
+                    
+                    # Get world state
+                    world_state = engine.world.get_world_state(engine.current_tick)
+                    
+                    # Run simulation phases
+                    perceptions = await engine._gather_perceptions(world_state)
+                    decisions = await engine._make_decisions(perceptions)
+                    await engine._resolve_actions(decisions)
+                    await engine._handle_interactions()
+                    engine._update_world_state()
+                    engine._update_agent_states(tick)
+                    
+                    if tick % 6 == 0:
+                        await engine._trigger_reflections()
+                    
+                    engine._record_metrics()
+                    
+                    # Update live display
+                    live.update(generate_dashboard())
+                    
+                    # Small delay
+                    await asyncio.sleep(settings.simulation.tick_duration_ms / 1000)
+                
+                # End of day processing
+                await engine._end_of_day_processing()
+                
+                # Update display with day summary
+                live.update(generate_dashboard())
+            
+            # Final update
+            await engine._print_final_summary()
+        
+        # Run with display updates
+        await run_with_updates(days)
 
 @app.command()
 def view(
@@ -180,7 +350,7 @@ def world():
     Example:
         sim world
     """
-    from .world.grid import WorldGrid
+    from src.world.grid import WorldGrid
     
     world = WorldGrid()
     console.print(Panel(

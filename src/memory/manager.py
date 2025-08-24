@@ -14,7 +14,7 @@ from neo4j import AsyncGraphDatabase
 from sentence_transformers import SentenceTransformer
 import asyncio
 
-from ..config.settings import settings
+from src.config.settings import settings
 
 class MemoryType(Enum):
     """Types of memories"""

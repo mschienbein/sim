@@ -4,19 +4,17 @@ Base agent implementation using Strands SDK with personality and memory.
 
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
-import asyncio
-import json
 from datetime import datetime
 
 from strands import Agent, tool
 from strands.models.openai import OpenAIModel
 
-from .personality import (
+from src.agents.personality import (
     Personality, EmotionalProfile, SocialProfile,
     PersonalityGenerator, Relationship
 )
-from ..memory.manager import MemoryManager
-from ..config.settings import settings
+from src.memory.manager import MemoryManager
+from src.config.settings import settings
 
 @dataclass
 class AgentStats:
@@ -120,13 +118,20 @@ class SimulationAgent(Agent):
         agent_id: str,
         name: str,
         role: str,
-        personality: Personality,
-        initial_location: Tuple[int, int],
-        memory_manager: MemoryManager,
+        personality: Optional[Personality] = None,
+        initial_location: Tuple[int, int] = (0, 0),
+        memory_manager: Optional[MemoryManager] = None,
         backstory: str = "",
         archetype: Optional[str] = None,
         model: Optional[OpenAIModel] = None
     ):
+        # Generate personality if not provided
+        if personality is None:
+            if archetype:
+                personality = PersonalityGenerator.generate_archetype(archetype)
+            else:
+                personality = PersonalityGenerator.generate_random()
+        
         # Build system prompt from personality and role
         system_prompt = self._build_system_prompt(name, role, personality, backstory)
         
@@ -283,18 +288,19 @@ Always stay in character and respond as {name} would."""
         
         self.stats.update_energy(-2)
         
-        # Store conversation in memory
-        memory_content = f"Said to {target}: {message}"
-        await self.memory_manager.store_memory(
-            agent_id=self.agent_id,
-            memory_type="conversation",
-            content=memory_content,
-            metadata={
-                "target": target,
-                "location": str(self.location),
-                "emotion": self.emotions.get_dominant_emotion()
-            }
-        )
+        # Store conversation in memory if memory manager is available
+        if self.memory_manager:
+            memory_content = f"Said to {target}: {message}"
+            await self.memory_manager.store_memory(
+                agent_id=self.agent_id,
+                memory_type="conversation",
+                content=memory_content,
+                metadata={
+                    "target": target,
+                    "location": str(self.location),
+                    "emotion": self.emotions.get_dominant_emotion()
+                }
+            )
         
         # Update conversation history
         self.conversation_history.append({
@@ -333,13 +339,14 @@ Always stay in character and respond as {name} would."""
         self.location = (new_x, new_y)
         self.stats.update_energy(-5)
         
-        # Store movement in memory
-        await self.memory_manager.store_memory(
-            agent_id=self.agent_id,
-            memory_type="observation",
-            content=f"Moved {direction} to location {self.location}",
-            metadata={"location": str(self.location)}
-        )
+        # Store movement in memory if memory manager is available
+        if self.memory_manager:
+            await self.memory_manager.store_memory(
+                agent_id=self.agent_id,
+                memory_type="observation",
+                content=f"Moved {direction} to location {self.location}",
+                metadata={"location": str(self.location)}
+            )
         
         return f"Moved {direction} to {self.location}"
     
@@ -350,19 +357,23 @@ Always stay in character and respond as {name} would."""
         observation = f"You are at location {self.location}. "
         observation += f"Energy: {self.stats.energy}/100, Health: {self.stats.health}/100"
         
-        # Store observation
-        await self.memory_manager.store_memory(
-            agent_id=self.agent_id,
-            memory_type="observation",
-            content=observation,
-            metadata={"location": str(self.location)}
-        )
+        # Store observation if memory manager is available
+        if self.memory_manager:
+            await self.memory_manager.store_memory(
+                agent_id=self.agent_id,
+                memory_type="observation",
+                content=observation,
+                metadata={"location": str(self.location)}
+            )
         
         return observation
     
     @tool
     async def remember(self, topic: str) -> str:
         """Recall memories about a topic"""
+        if not self.memory_manager:
+            return "No memory system available"
+        
         memories = await self.memory_manager.retrieve_memories(
             agent_id=self.agent_id,
             query=topic,
@@ -401,13 +412,14 @@ Always stay in character and respond as {name} would."""
             "request": request_items
         }
         
-        # Store trade attempt in memory
-        await self.memory_manager.store_memory(
-            agent_id=self.agent_id,
-            memory_type="action",
-            content=f"Proposed trade with {target}",
-            metadata=trade_proposal
-        )
+        # Store trade attempt in memory if memory manager is available
+        if self.memory_manager:
+            await self.memory_manager.store_memory(
+                agent_id=self.agent_id,
+                memory_type="action",
+                content=f"Proposed trade with {target}",
+                metadata=trade_proposal
+            )
         
         return f"Proposed trade to {target}"
     
@@ -445,13 +457,14 @@ Always stay in character and respond as {name} would."""
         
         work_description = f"Worked as a {self.role}"
         
-        # Store work in memory
-        await self.memory_manager.store_memory(
-            agent_id=self.agent_id,
-            memory_type="action",
-            content=work_description,
-            metadata={"reward": reward}
-        )
+        # Store work in memory if memory manager is available
+        if self.memory_manager:
+            await self.memory_manager.store_memory(
+                agent_id=self.agent_id,
+                memory_type="action",
+                content=work_description,
+                metadata={"reward": reward}
+            )
         
         return work_description
     
@@ -464,18 +477,22 @@ Always stay in character and respond as {name} would."""
         # Reduce stress while resting
         self.emotions.stress = max(0, self.emotions.stress - 0.1)
         
-        await self.memory_manager.store_memory(
-            agent_id=self.agent_id,
-            memory_type="action",
-            content=f"Rested and recovered {energy_recovered} energy",
-            metadata={"energy_recovered": energy_recovered}
-        )
+        if self.memory_manager:
+            await self.memory_manager.store_memory(
+                agent_id=self.agent_id,
+                memory_type="action",
+                content=f"Rested and recovered {energy_recovered} energy",
+                metadata={"energy_recovered": energy_recovered}
+            )
         
         return f"Rested and recovered {energy_recovered} energy"
     
     @tool
     async def reflect(self) -> str:
         """Reflect on recent experiences"""
+        if not self.memory_manager:
+            return "No memory system available for reflection"
+        
         # Retrieve recent memories
         recent_memories = await self.memory_manager.retrieve_memories(
             agent_id=self.agent_id,

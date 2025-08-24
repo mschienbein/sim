@@ -10,14 +10,14 @@ import random
 from collections import defaultdict
 from itertools import combinations
 
-from ..agents.base_agent import SimulationAgent
-from ..agents.sage_agent import SageAgent
-from ..agents.personality import PersonalityGenerator
-from ..memory.graphiti_manager import GraphitiMemoryManager
-from ..world.grid import WorldGrid, LocationType
-from ..config.settings import settings
-from .rate_limiter import TokenBudgetManager
-from .conversation_manager import ConversationManager
+from src.agents.base_agent import SimulationAgent
+from src.agents.sage_agent import SageAgent
+from src.agents.personality import PersonalityGenerator
+from src.memory.graphiti_manager import GraphitiMemoryManager
+from src.world.grid import WorldGrid, LocationType
+from src.config.settings import settings
+from src.orchestration.rate_limiter import TokenBudgetManager
+from src.orchestration.conversation_manager import ConversationManager
 
 class SimulationEngine:
     """
