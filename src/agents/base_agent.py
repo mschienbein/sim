@@ -198,6 +198,8 @@ class SimulationAgent(Agent):
         
         # Action management
         self.current_action = None
+        self.last_action = "idle"
+        self.last_action_time = 0
         self.action_queue = []
         self.last_action_tick = 0
         

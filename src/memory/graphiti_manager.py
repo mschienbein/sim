@@ -57,8 +57,14 @@ class GraphitiMemoryManager:
         metadata['agent_id'] = agent_id
         metadata['memory_type'] = memory_type
         
-        # Construct episode body
-        episode_body = f"{agent_id}: {content}"
+        # Ensure content is not empty
+        if not content or not str(content).strip():
+            content = f"[{memory_type} by {agent_id} at {timestamp}]"
+            logger.warning(f"Empty content for {memory_type}, using placeholder")
+        
+        # Construct episode body with rich context
+        location = metadata.get('location', 'unknown')
+        episode_body = f"{agent_id}: {content}\n[Type: {memory_type}, Location: {location}, Time: {timestamp}]"
         
         # Store based on memory type
         if memory_type == "observation":
@@ -126,10 +132,16 @@ class GraphitiMemoryManager:
         Safely add episode with truncation and timeout handling.
         Prevents JSON parsing errors from oversized responses.
         """
+        # Ensure episode_body is not empty
+        if not episode_body or not episode_body.strip():
+            logger.warning(f"Empty episode body for {name}, using placeholder")
+            episode_body = f"[Episode: {name} at {reference_time}]"
+        
         # Truncate episode body if too long
-        if len(episode_body) > max_length:
+        original_length = len(episode_body)
+        if original_length > max_length:
             episode_body = episode_body[:max_length - 3] + "..."
-            logger.debug(f"Truncated episode body from {len(episode_body)} to {max_length}")
+            logger.debug(f"Truncated episode body from {original_length} to {max_length}")
         
         try:
             # Use timeout handler
@@ -451,8 +463,18 @@ class GraphitiMemoryManager:
             timestamp = datetime.now()
         
         # Build episode for Graphiti
+        # Format dialogue as human-readable conversation
+        conversation_lines = []
+        for turn in dialogue:
+            speaker = turn.get('speaker', 'Unknown')
+            message = turn.get('message', '')
+            conversation_lines.append(f"{speaker}: {message}")
+        
+        conversation_text = "\n".join(conversation_lines)
+        
+        # Also keep JSON for structured data
         try:
-            content_str = json.dumps(dialogue)
+            content_json = json.dumps(dialogue)
         except Exception:
             logger.exception(
                 "Failed to JSON-serialize dialogue for conversation",
@@ -462,22 +484,24 @@ class GraphitiMemoryManager:
                     "dialogue_preview": self._preview(dialogue),
                 },
             )
-            content_str = str(dialogue)
+            content_json = str(dialogue)
+            
         episode = {
             "name": f"conversation_{agent_a_id}_{agent_b_id}_{timestamp.isoformat()}",
-            "content": content_str,
+            "content": conversation_text,  # Human-readable format
             "timestamp": timestamp,
             "source": "conversation",
             "metadata": {
                 "participants": [agent_a_id, agent_b_id],
                 "location": location,
                 "turn_count": len(dialogue),
+                "dialogue_json": content_json  # Keep structured data
             },
         }
         
         # Ingest into Graphiti - it will extract entities and relationships
-        # Include metadata in episode body
-        episode_body = f"{episode['content']}\n[Context: {agent_a_id} speaking with {agent_b_id} at {location}]"
+        # Include full conversation in episode body
+        episode_body = f"{conversation_text}\n\n[Context: {agent_a_id} and {agent_b_id} conversing at {location}]"
         
         try:
             logger.debug(
@@ -616,6 +640,26 @@ class GraphitiMemoryManager:
                 },
             )
             raise
+    
+    async def store_observation(
+        self,
+        agent_id: str,
+        observation: str,
+        location: str = "unknown",
+        importance: float = 0.5,
+        timestamp: Optional[datetime] = None
+    ):
+        """
+        Store an observation for an agent. Wrapper for compatibility.
+        Simply calls ingest_observation.
+        """
+        return await self.ingest_observation(
+            agent_id=agent_id,
+            observation=observation,
+            location=location,
+            importance=importance,
+            timestamp=timestamp
+        )
     
     async def ingest_trade(
         self,

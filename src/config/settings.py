@@ -21,8 +21,8 @@ class LLMConfig(BaseSettings):
     
     # OpenAI settings
     openai_api_key: Optional[str] = Field(default=None, validation_alias="OPENAI_API_KEY")
-    openai_model_id: str = Field(default="gpt-5", validation_alias="OPENAI_MODEL_ID")
-    openai_sage_model_id: str = Field(default="gpt-5", validation_alias="OPENAI_SAGE_MODEL_ID")
+    openai_model_id: str = Field(default="gpt-5-nano", validation_alias="OPENAI_MODEL_ID")
+    openai_sage_model_id: str = Field(default="gpt-5-nano", validation_alias="OPENAI_SAGE_MODEL_ID")
     openai_embedding_model: str = Field(default="text-embedding-3-small", validation_alias="OPENAI_EMBEDDING_MODEL")
     # Retry/timeout
     openai_max_retries: int = Field(default=5, validation_alias="OPENAI_MAX_RETRIES")

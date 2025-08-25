@@ -5,7 +5,6 @@ Main simulation engine that orchestrates agent interactions and world state.
 import asyncio
 import logging
 from typing import Dict, List, Optional, Any, Tuple
-import json
 import random
 from collections import defaultdict
 from itertools import combinations
@@ -474,6 +473,11 @@ class SimulationEngine:
             agent = self.agents[agent_id]
             action = decision.get("action", "observe")
             
+            # Update the agent's current action for UI display
+            agent.current_action = action
+            agent.last_action = action  # Keep track of last action
+            agent.last_action_time = self.current_tick
+            
             try:
                 if action == "move":
                     direction = decision.get("direction", "north")
@@ -509,8 +513,12 @@ class SimulationEngine:
                 if self.trace_enabled:
                     self._trace(self._format_action_log(agent.name, action, decision))
                 
+                # Clear action after execution
+                agent.current_action = None
+                
             except Exception as e:
                 print(f"Error executing action for {agent_id}: {e}")
+                agent.current_action = None  # Clear on error too
     
     async def _handle_interactions(self):
         """Handle agent interactions when they're in the same location"""

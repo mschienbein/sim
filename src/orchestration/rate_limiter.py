@@ -206,10 +206,10 @@ class CostOptimizer:
     
     def __init__(self):
         self.model_costs = {
+            "gpt-5-nano": 0.00001,      # Extremely cheap model (cheaper than gpt-3.5)
+            "gpt-4o-mini": 0.00015,     # $0.15 per 1M input tokens = $0.00015 per 1k tokens
             "gpt-4o": 0.0025,           # $2.50 per 1M input tokens = $0.0025 per 1k tokens
-            "gpt-4o-mini": 0.00015,     # $0.15 per 1M input tokens = $0.00015 per 1k tokens  
-            "gpt-5": 0.005,             # Estimated (2x GPT-4o cost for more advanced model)
-            "gpt-3.5-turbo": 0.0005     # Legacy model for comparison
+            "gpt-4": 0.03               # $30 per 1M input tokens = $0.03 per 1k tokens (expensive)
         }
         
         self.action_priorities = {
@@ -241,29 +241,9 @@ class CostOptimizer:
         return random.random() < threshold
     
     def select_model(self, action: str, budget_remaining: float) -> str:
-        """Select appropriate model based on action and budget"""
-        priority = self.action_priorities.get(action, 2)
-        
-        # High priority actions get GPT-5
-        if priority >= 4:
-            return "gpt-5" if budget_remaining > 0.2 else "gpt-4o"
-        
-        # Low priority actions - still use GPT-5 if plenty of budget
-        if priority <= 2:
-            if budget_remaining > 0.8:
-                return "gpt-5"  # Use GPT-5 when we have plenty of budget
-            elif budget_remaining > 0.4:
-                return "gpt-4o"
-            else:
-                return "gpt-4o-mini"
-        
-        # Medium priority - prefer GPT-5 when possible
-        if budget_remaining > 0.6:
-            return "gpt-5"
-        elif budget_remaining > 0.3:
-            return "gpt-4o"
-        else:
-            return "gpt-4o-mini"
+        """Select appropriate model based on action and budget - always use gpt-5-nano for maximum cost efficiency"""
+        # Always return gpt-5-nano for all actions - it's extremely cheap and effective
+        return "gpt-5-nano"
     
     def estimate_cost(self, tokens: int, model: str) -> float:
         """Estimate cost for token usage"""

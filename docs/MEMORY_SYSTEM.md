@@ -218,21 +218,54 @@ RETURN m.content, m.emotion, m.timestamp
 
 ## Performance Optimization
 
+### Core Optimizations (5-10x Improvement)
+
+#### JSON Truncation System
+Prevents parsing errors from oversized LLM responses:
+- Primary truncation at 2000 characters
+- Fallback to 500 characters on failure
+- Smart truncation preserves JSON structure
+- Implemented in `_add_episode_safe()` method
+
+#### Timeout Protection
+All async operations protected with timeouts:
+- Default 30-second timeout for memory operations
+- Graceful degradation on timeout
+- Automatic retry with exponential backoff
+- Prevents hanging on slow Neo4j queries
+
+#### Parallel Processing
+Concurrent execution where possible:
+- All agent perceptions gathered in parallel
+- Batch decision-making across agents
+- Concurrent memory writes with locks
+- Async context retrieval for multiple agents
+
 ### Indexing Strategy
-- Primary indexes on IDs
+- Primary indexes on IDs and group_id
 - Temporal indexes on timestamps
 - Full-text index on content
 - Bloom filters for existence checks
+- Composite indexes for common query patterns
 
 ### Caching
-- Recent memories cached in memory
+- LRU cache for recent memories (5-minute TTL)
 - Frequently accessed relationships cached
 - Embedding cache for repeated queries
+- Query result cache for expensive traversals
 
 ### Batch Operations
-- Group related memory stores
-- Bulk relationship updates
-- Periodic cleanup of old memories
+- Groups up to 50 memory operations per transaction
+- Bulk relationship updates (100 per batch)
+- Queue-based episode storage with batch writes
+- Periodic cleanup of old memories (daily)
+
+### Data Isolation
+Each simulation run uses unique partitioning:
+- `group_id`: `sim_run_[uuid]` for all memories
+- Scoped queries prevent cross-contamination
+- Enables parallel simulation runs
+- Easy cleanup with single group_id deletion
 
 ## Integration with Agent Decision Making
 

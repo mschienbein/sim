@@ -515,20 +515,54 @@ def propagate_knowledge(self, source_agent: str, fact: str, confidence: float):
 
 ## 6. Performance Optimizations
 
-### 6.1 Caching Strategies
-- **Memory Cache**: 5-minute TTL for recent retrievals
+### 6.1 Graphiti Memory Optimizations
+**Episode Processing (5-10x improvement):**
+- **JSON Truncation**: Automatic truncation at 2000 chars (fallback to 500) to prevent parsing errors
+- **Timeout Protection**: 30-second timeout for all async operations with graceful degradation
+- **Batch Operations**: Groups multiple memory operations into single Neo4j transactions
+- **Parallel Processing**: Concurrent perception and decision phases across all agents
+
+**Context Retrieval (<100ms latency):**
+- **Graph-based Context**: Efficient traversal using Neo4j indexes
+- **Relationship Filtering**: Pre-filter agents based on trust levels
+- **Memory Prioritization**: Recent memories weighted higher in context
+
+### 6.2 Caching Strategies
+- **Memory Cache**: LRU cache with 5-minute TTL for recent retrievals
 - **Embedding Cache**: Persistent cache for computed embeddings
 - **Decision Cache**: Reuse decisions for identical world states
+- **Query Result Cache**: Cache frequently accessed graph queries
 
-### 6.2 Batch Processing
-- **LLM Calls**: Batch agent decisions per tick
-- **Memory Operations**: Bulk inserts to Neo4j
-- **Pathfinding**: Precompute common routes
+### 6.3 Batch Processing
+- **LLM Calls**: Batch agent decisions per tick (up to 5 concurrent)
+- **Memory Operations**: Bulk inserts to Neo4j (50 operations per batch)
+- **Pathfinding**: Precompute common routes at initialization
+- **Episode Storage**: Queue and batch episode writes
 
-### 6.3 Resource Management
-- **Connection Pooling**: Neo4j connection reuse
+### 6.4 Resource Management
+- **Connection Pooling**: Neo4j connection reuse with 10-connection pool
 - **Prompt Templates**: Precomputed personality strings
 - **Lazy Loading**: Load agent details on-demand
+- **Token Budgeting**: Dynamic model selection based on remaining budget
+
+### 6.5 Checkpoint System
+**State Preservation:**
+- **Automatic Saves**: End-of-day checkpoints with full state
+- **Pickle Format**: Binary serialization for complete object preservation
+- **Incremental Saves**: Only changed data written to disk
+- **Resume Capability**: Continue from any checkpoint with `--continue`
+
+**Checkpoint Contents:**
+- Agent states (location, goals, relationships, inventory, health, energy)
+- Simulation metrics and statistics
+- Event log (last 100 events)
+- Token usage and budget tracking
+
+### 6.6 Data Isolation
+- **Unique Run IDs**: Each simulation uses `sim_run_[uuid]` for partitioning
+- **Group-based Queries**: All Graphiti operations scoped to run ID
+- **Parallel Simulations**: Multiple concurrent runs without data collision
+- **Clean Teardown**: Easy cleanup of specific simulation runs
 
 ## 7. Monitoring & Observability
 

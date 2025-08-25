@@ -239,13 +239,20 @@ async def run_with_dashboard(engine: SimulationEngine, days: int, start_day: int
         for agent_id, agent in engine.agents.items():
             location = engine.world.get_location_by_position(agent.location)
             location_name = location.name if location else str(agent.location)
-            current_action = agent.current_action or "idle"
+            
+            # Show current action if actively doing something, else last action
+            if agent.current_action:
+                action_display = f"[bold]{agent.current_action}[/bold]"
+            elif hasattr(agent, 'last_action'):
+                action_display = agent.last_action
+            else:
+                action_display = "idle"
             
             agent_table.add_row(
                 agent.name,
                 f"{agent.stats.energy:.0f}/100",
                 location_name,
-                current_action
+                action_display
             )
         
         layout["left"].update(Panel(agent_table, title="👥 Agents", border_style="green"))

@@ -2,15 +2,33 @@
 
 A sophisticated multi-agent simulation where AI agents develop distinct personalities through interactions, form memories using a temporal knowledge graph, and evolve their behaviors over time.
 
+![Simulation Dashboard](dashboard.png)
+*Live dashboard showing agent activities, world map, and real-time metrics*
+
 ## 🌟 Features
 
+### Core Features
 - **Personality Evolution**: Agents develop unique personalities based on Big Five traits
-- **Temporal Memory**: Neo4j + Graphiti for bi-temporal knowledge graphs
+- **Temporal Memory**: Neo4j + Graphiti for bi-temporal knowledge graphs with full episode tracking
 - **Smart Conversations**: Strands A2A protocol for autonomous agent interactions  
 - **Special Sage Agent**: One agent with limited web search capabilities (1x/day)
-- **Token Management**: Built-in rate limiting to control LLM costs
+- **Token Management**: Built-in rate limiting to control LLM costs with dynamic model selection
 - **Rich Monitoring**: Grafana dashboards for real-time simulation metrics
 - **Live Dashboard**: Real-time CLI visualization of agent activities
+
+### Performance & Optimization
+- **Graphiti Optimizations**: Batch processing, caching, and timeout handling for 5-10x faster memory operations
+- **JSON Truncation**: Safe episode storage with automatic truncation to prevent parsing errors
+- **Parallel Processing**: Concurrent perception and decision phases for faster simulation
+- **Memory Context**: Graph-based context retrieval for informed agent decisions
+- **Request Timeouts**: Automatic timeout handling (30s default) for resilient operation
+
+### Simulation Management
+- **Checkpoint System**: Save and resume simulations with full state preservation
+- **Continue Command**: Resume from checkpoints with `--continue` parameter
+- **Data Isolation**: Each simulation run uses unique group_id for memory partitioning
+- **Graceful Interruption**: CTRL+C handling with state preservation
+- **Auto-save**: Automatic checkpoints at end of each simulated day
 
 ## 🏗️ Architecture
 
@@ -96,7 +114,10 @@ pip install -e .
 5. **Run the simulation**
 ```bash
 # With virtual environment activated and services running
-python -m src.main --agents 5 --days 3
+python -m src.main run --agents 5 --days 3
+
+# Or use the sim command if installed
+sim run --agents 5 --days 3
 ```
 
 ## 🛠️ Alternative Setup (Without Docker)
@@ -156,10 +177,94 @@ Follow the [official installation guide](https://neo4j.com/docs/operations-manua
 
 ```bash
 # Basic run
-python -m src.main --agents 5 --days 10
+python -m src.main run --agents 5 --days 10
 
-# With monitoring dashboard
-python -m src.main --agents 5 --days 3 --dashboard
+# With debug output
+python -m src.main run --agents 5 --days 3 --debug
+
+# With detailed trace logging
+python -m src.main run --agents 5 --days 3 --trace
+
+# Without Graphiti (uses basic memory)
+python -m src.main run --agents 5 --days 3 --no-graphiti
+
+# Continue from checkpoint
+python -m src.main run --continue checkpoints/checkpoint_day_2.pkl --days 3
+
+# View checkpoint details
+python -m src.main view --latest
+
+# Clear Neo4j database
+python -m src.main clear --confirm
+
+# View help
+python -m src.main --help
+```
+
+## 📚 CLI Commands
+
+The simulation provides a rich CLI interface with multiple commands:
+
+### `sim run` - Run the simulation
+```bash
+# Basic usage
+sim run --agents 5 --days 10
+
+# Options:
+#   --agents, -a    Number of agents to simulate (default: 5)
+#   --days, -d      Number of days to simulate (default: 10)
+#   --config, -c    Configuration file path
+#   --debug         Enable debug mode with verbose logging
+#   --trace         Enable detailed per-tick step/action logs
+#   --no-graphiti   Use basic memory instead of Graphiti
+#   --continue      Continue from checkpoint file
+
+# Examples:
+sim run --agents 3 --days 5 --debug
+sim run --continue checkpoints/checkpoint_day_2.pkl --days 3
+```
+
+### `sim view` - View checkpoint details
+```bash
+# View latest checkpoint
+sim view --latest
+
+# View specific checkpoint
+sim view --checkpoint checkpoints/checkpoint_day_3.pkl
+
+# Shows:
+# - Simulation day and tick
+# - Agent states and locations
+# - Metrics (conversations, trades, reflections)
+# - Token usage and costs
+```
+
+### `sim clear` - Clear Neo4j database
+```bash
+# Clear all data (requires confirmation)
+sim clear --confirm
+
+# Clear without confirmation prompt
+sim clear --force
+```
+
+### Checkpoint System
+
+Checkpoints are automatically saved at the end of each simulated day. They contain:
+- Complete agent states (location, goals, relationships, inventory, health, energy)
+- Simulation metrics and statistics
+- Event log (last 100 events)
+- Token usage data
+
+To continue a simulation:
+```bash
+# Continue from latest checkpoint
+sim run --continue checkpoints/checkpoint_day_5.pkl --days 2
+
+# This will:
+# 1. Load the saved state from day 5
+# 2. Restore all agent states and metrics
+# 3. Continue simulation for 2 more days (days 6-7)
 ```
 
 ## 📝 Configuration
